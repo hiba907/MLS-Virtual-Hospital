@@ -1,3 +1,21 @@
+# ════════════════════════════════════════════════════════════════════════════
+# 🏥 MLS Virtual Hospital
+# Copyright (c) 2026 Hiba Hamdar — Academy of Medical Learning Skills
+#
+# ⚖️  ALL RIGHTS RESERVED — PROPRIETARY SOFTWARE
+#
+# This source code is proprietary and confidential.
+# It may NOT be copied, reused, modified, distributed, sold, or used
+# in any form without explicit written permission from the copyright holder.
+#
+# Viewing of this code is permitted on the public GitHub repository for
+# reference and educational observation purposes only.
+#
+# Unauthorized use will result in legal action.
+#
+# 📜 See LICENSE file for full terms.
+# 📧 For licensing inquiries: hamdarhiba95@gmail.com
+# ════════════════════════════════════════════════════════════════════════════
 import streamlit as st
 import time
 import streamlit.components.v1 as components

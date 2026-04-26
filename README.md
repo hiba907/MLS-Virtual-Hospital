@@ -1,3 +1,12 @@
+# 🏥 MLS Virtual Hospital
+
+[![License: All Rights Reserved](https://img.shields.io/badge/License-All%20Rights%20Reserved-red.svg)](./LICENSE)
+
+> ⚠️ **Proprietary Software** — All Rights Reserved.  
+> This code is publicly visible for reference but **may not be copied, reused, 
+> or distributed** without written permission. See [LICENSE](./LICENSE) for details.
+
+---
 # 🏥 MLS Virtual Hospital — Setup Guide
 
 ## Files Required

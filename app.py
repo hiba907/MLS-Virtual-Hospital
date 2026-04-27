@@ -61,6 +61,20 @@ try:
 except ImportError:
     NEW_FEATURES_OK = False
 
+# ── Tier 1 features — gamification + Ask Dr. Hiba ────────────────────────────
+try:
+    from tier1_features import (
+        award_xp, init_session, get_user_stats,
+        render_xp_bar, render_stats_dashboard,
+        render_ask_mentor_button, render_ask_mentor_page,
+        render_leaderboard, render_floating_help_button,
+        MENTOR_WHATSAPP, MENTOR_EMAIL, MENTOR_NAME,
+    )
+    TIER1_AVAILABLE = True
+except Exception as e:
+    TIER1_AVAILABLE = False
+    print(f"Tier 1 features not loaded: {e}")
+
 # ── Clinical helpers (real PubMed retrieval, specialist X-ray AI, feedback) ──
 try:
     from clinical_helpers import (
@@ -13873,3 +13887,8 @@ elif p=="flashcards":
     if NEW_FEATURES_OK: page_flashcard_builder()
     else: st.error("⚠️ new_features.py not found. Place it in the same folder as app.py.")
 else: page_home()
+
+# ── Tier 1: floating "Ask Dr. Hiba" button + daily login init ────────────────
+if TIER1_AVAILABLE and st.session_state.get("auth_user"):
+    init_session()
+    render_floating_help_button()

@@ -4474,7 +4474,8 @@ with st.sidebar:
               ("🏆 Competency Tracker","competency"),
               ("🎯 OSCE Exam Simulator","osce"),
               ("📋 Progress Notes","notes"),
-              ("🃏 Flashcard Builder","flashcards")]
+              ("🃏 Flashcard Builder","flashcards"),
+              ("⭐ My Progress (XP)","progress_dashboard")]
     for label,pk in advanced:
         if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
 
@@ -13886,6 +13887,10 @@ elif p=="notes":
 elif p=="flashcards":
     if NEW_FEATURES_OK: page_flashcard_builder()
     else: st.error("⚠️ new_features.py not found. Place it in the same folder as app.py.")
+# ── Tier 1: Progress Dashboard ────────────────────────────────────────────────
+elif p=="progress_dashboard":
+    if TIER1_AVAILABLE: render_stats_dashboard()
+    else: st.error("⚠️ tier1_features.py not found. Place it in the same folder as app.py.")
 else: page_home()
 
 # ── Tier 1: floating "Ask Dr. Hiba" button + daily login init ────────────────

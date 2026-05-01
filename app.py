@@ -839,7 +839,7 @@ def try_all_models(payload_builder_fn):
             except Exception as e:
                 last_error = str(e)
                 continue
-    return f"!ERR All models/keys exhausted: {last_error}", None
+    return f"!ERR The AI service is busy right now (free quota reached). Please try again in 1–2 minutes.", None
 
 def call_ai(system, messages, max_tokens=1200, credit_type="chat"):
     """Call Gemini AI with automatic key rotation + model fallback. Deducts credits."""
@@ -889,7 +889,7 @@ def call_ai(system, messages, max_tokens=1200, credit_type="chat"):
                 except Exception as me:
                     last_err = str(me); continue
 
-        return f"!ERR All {len(keys)} keys × {len(GEMINI_MODELS_CASCADE)} models exhausted: {last_err}"
+        return f"!ERR The AI service is busy right now (free quota reached). Please try again in 1–2 minutes. Tip: switch to a lighter model in the sidebar if you keep seeing this."
     except Exception as e:
         return f"!ERR {e}"
 def call_ai_with_image(system, prompt, image_bytes, mime_type="image/jpeg"):
@@ -916,7 +916,7 @@ def call_ai_with_image(system, prompt, image_bytes, mime_type="image/jpeg"):
                 last_err = f"{key[:6]}…: rate limited"; continue
             else:
                 return f"!ERR {r.json().get('error',{}).get('message','Unknown')}"
-        return f"!ERR All keys rate limited: {last_err}"
+        return f"!ERR The AI service is busy right now (free quota reached). Please try again in 1–2 minutes."
     except Exception as e:
         return f"!ERR {e}"
 
@@ -1246,16 +1246,23 @@ def voice_input_component(key="voice", role="doctor", height=160):
 
 
 def tts_speak(text):
-    """Reliable TTS using components.html — always executes."""
+    """Reliable TTS using components.html — always executes.
+    Now also detects when no voices are installed and reports back via postMessage,
+    so the page can show a helpful warning to the user."""
     if not text: return
     import json as _json
     safe = _json.dumps(str(text))
     components.html(f"""
     <script>
     (function() {{
+        if (!window.speechSynthesis) {{
+            try {{ window.parent.postMessage({{type:'tts_status', status:'unsupported'}}, '*'); }} catch(e){{}}
+            return;
+        }}
         window.speechSynthesis.cancel();
         var u = new SpeechSynthesisUtterance({safe});
         u.rate = 0.9; u.pitch = 1.0; u.volume = 1.0;
+        var attempts = 0;
         function trySpeak() {{
             var voices = window.speechSynthesis.getVoices();
             if (voices.length > 0) {{
@@ -1263,17 +1270,51 @@ def tts_speak(text):
                      || voices.find(function(x){{return x.lang.startsWith('en');}})
                      || voices[0];
                 if (v) u.voice = v;
+                window.speechSynthesis.speak(u);
+            }} else if (attempts < 10) {{
+                attempts++;
+                setTimeout(trySpeak, 200);
+            }} else {{
+                try {{ window.parent.postMessage({{type:'tts_status', status:'no_voices'}}, '*'); }} catch(e){{}}
             }}
-            window.speechSynthesis.speak(u);
         }}
         if (window.speechSynthesis.getVoices().length === 0) {{
             window.speechSynthesis.onvoiceschanged = trySpeak;
+            setTimeout(trySpeak, 300);
         }} else {{
             setTimeout(trySpeak, 100);
         }}
     }})();
     </script>
     """, height=0)
+
+
+def render_tts_voice_check():
+    """Sidebar widget that lets users test their voice setup and see warnings.
+    Show this in the sidebar near the voice toggle."""
+    if not st.session_state.get("voice_enabled"):
+        return
+    with st.expander("🎤 Test voice / fix silent voice", expanded=False):
+        st.caption(
+            "If you don't hear the patient speak, your computer may be missing "
+            "text-to-speech voices."
+        )
+        if st.button("▶️ Test voice now", key="test_voice_btn",
+                     use_container_width=True):
+            tts_speak("This is a test. If you hear this clearly, your voice "
+                      "is working correctly.")
+            st.info("Click test, listen, and if silent — see instructions below.")
+        st.markdown(
+            "**If voice is silent on your device:**\n\n"
+            "**Windows:** Settings → Time & Language → Speech → Manage voices "
+            "→ Install English voices\n\n"
+            "**Mac:** System Settings → Accessibility → Spoken Content → "
+            "System voice → Customize → check English voices\n\n"
+            "**Linux:** Voice support varies by distro. Use Chrome (built-in voices) "
+            "rather than Firefox.\n\n"
+            "**Chromebook:** Voice works out of the box in Chrome.\n\n"
+            "**Mobile:** Voice works best on iOS Safari and Android Chrome."
+        )
 
 def tts_speak_doctor(text):
     """TTS for doctor/student voice — different pitch and rate."""
@@ -1319,50 +1360,84 @@ def play_clinical_sound(sound_type, case_data=None):
     # Resolve "auto_*" sound types to concrete sound types first
     dx = str(case_data.get("Final_Diagnosis","") if case_data else "").lower()
     cc = str(case_data.get("Chief_Complaint","") if case_data else "").lower()
-    combined = dx + " " + cc
+    hpi = str(case_data.get("HPI","") if case_data else "").lower()
+    pe  = str(case_data.get("Physical_Findings","") if case_data else "").lower()
+    combined = " ".join([dx, cc, hpi, pe])
 
     if sound_type == "auto_heart":
-        if any(w in combined for w in ["murmur","aortic","mitral","regurgit","stenosis","vsd","asd"]):
+        if any(w in combined for w in [
+            "murmur","aortic","mitral","regurgit","stenosis","vsd","asd",
+            "valvular","prolapse","insufficiency","systolic","diastolic"
+        ]):
             sound_type = "murmur"
-        elif any(w in combined for w in ["mi","stemi","nstemi","heart fail","cardiac"]):
+        elif any(w in combined for w in [
+            "mi","stemi","nstemi","heart fail","heart failure","cardiac",
+            "ischem","angina","ejection","cardiomyopathy","myocardi",
+            "infarct","chest pain","cardiogenic"
+        ]):
             sound_type = "s3_gallop"
         else:
             sound_type = "normal_heart"
     elif sound_type == "auto_lung":
-        if any(w in combined for w in ["pneumonia","consolidat","fibrosis","effusion","pulm edema"]):
+        if any(w in combined for w in [
+            "pneumonia","consolidat","fibrosis","effusion","pulm edema",
+            "pulmonary edema","atelect","interstitial","crackle","rales",
+            "alveolar","ards"
+        ]):
             sound_type = "crackles_fine"
-        elif any(w in combined for w in ["asthma","wheeze","copd","bronchitis","obstruct"]):
+        elif any(w in combined for w in [
+            "asthma","wheeze","copd","bronchitis","obstruct","emphysema",
+            "bronchospasm","reactive airway","exacerbation"
+        ]):
             sound_type = "wheeze_exp"
-        elif any(w in combined for w in ["pneumothorax","absent","pleural"]):
+        elif any(w in combined for w in [
+            "pneumothorax","absent","pleural","tension"
+        ]):
             sound_type = "absent_breath"
         else:
             sound_type = "normal_breath"
     elif sound_type == "auto_bowel":
-        if any(w in combined for w in ["obstruct","ileus","post-op","peritonitis"]):
+        if any(w in combined for w in [
+            "obstruct","ileus","post-op","peritonitis","sbo","lbo",
+            "perforat","appendic","cholecyst","diverticul"
+        ]):
             sound_type = "bowel_absent"
-        elif any(w in combined for w in ["gastroenteritis","diarrhea","ibs","colitis"]):
+        elif any(w in combined for w in [
+            "gastroenteritis","diarrhea","ibs","colitis","crohn",
+            "inflammatory bowel","viral","hyperactive"
+        ]):
             sound_type = "bowel_hyperactive"
         else:
             sound_type = "bowel_normal"
     elif sound_type == "auto_percussion":
-        if any(w in combined for w in ["effusion","empyema","hemothorax","consolidat"]):
+        if any(w in combined for w in [
+            "effusion","empyema","hemothorax","consolidat","pneumonia",
+            "fibrosis","ascites","mass","hepatomegaly","dull"
+        ]):
             sound_type = "percussion_dull"
-        elif any(w in combined for w in ["pneumothorax","emphysema","copd"]):
+        elif any(w in combined for w in [
+            "pneumothorax","emphysema","copd","tension","hyperresonan",
+            "hyper-resonant"
+        ]):
             sound_type = "percussion_hyper"
-        elif any(w in combined for w in ["ascites","mass","hepatomegaly"]):
-            sound_type = "percussion_dull"
         else:
             sound_type = "percussion_resonant"
 
-    # If real-sound module is available AND we have a real recording, render dual panel
-    if REAL_SOUNDS_OK and has_real_recording(sound_type):
-        render_dual_sound_panel(sound_type, render_synth_func=_play_clinical_sound_synth)
-    else:
-        # Fall back to synth-only (with disclaimer if module is loaded)
-        if REAL_SOUNDS_OK:
+    # Render real recording if we have one for this sound_type, else fall back to synth.
+    # The dual-sound panel handles the case where a real recording exists by showing
+    # both synth (teaching) and real (reality). When no real recording exists for
+    # this sound_type, we just play the synthetic version directly.
+    if REAL_SOUNDS_OK:
+        if has_real_recording(sound_type):
             render_dual_sound_panel(sound_type, render_synth_func=_play_clinical_sound_synth)
         else:
+            # No real recording for this exact sound_type — use synth + small note
+            st.caption(f"ℹ️ No curated real recording matches **{sound_type}** for this case. "
+                       "Playing synthetic teaching version only.")
             _play_clinical_sound_synth(sound_type)
+    else:
+        # real_clinical_sounds module isn't loaded at all
+        _play_clinical_sound_synth(sound_type)
 
 
 def _play_clinical_sound_synth(sound_type, case_data=None):
@@ -4501,6 +4576,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.session_state.voice_enabled=st.toggle("🔊 Patient Voice",value=st.session_state.voice_enabled)
+    render_tts_voice_check()
     st.markdown("---")
     # Model selector
     current_model = st.session_state.get("active_model", GEMINI_MODEL)

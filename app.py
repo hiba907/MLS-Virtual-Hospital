@@ -75,6 +75,22 @@ except Exception as e:
     TIER1_AVAILABLE = False
     print(f"Tier 1 features not loaded: {e}")
 
+# ── Mentor Directory — book sessions with multiple seniors ────────────────────
+try:
+    from mentor_directory import (
+        render_mentor_directory_page,
+        render_admin_mentor_panel,
+        render_book_session_button,
+        render_my_sessions_page,
+        render_jitsi_call_page,
+        get_pending_session_count,
+        get_unverified_senior_count,
+    )
+    MENTOR_DIRECTORY_OK = True
+except Exception as e:
+    MENTOR_DIRECTORY_OK = False
+    print(f"Mentor directory not loaded: {e}")
+
 # ── Clinical helpers (real PubMed retrieval, specialist X-ray AI, feedback) ──
 try:
     from clinical_helpers import (
@@ -4126,14 +4142,21 @@ def _get_user(email: str, pw: str):
     return None
 
 def _register_user(name: str, email: str, pw: str, role: str,
-                   security_q: str = "", security_a: str = "") -> tuple:
+                   security_q: str = "", security_a: str = "",
+                   specialty: str = "", hospital: str = "") -> tuple:
     """
     Register a new user with optional security question/answer for password recovery.
     Returns (success: bool, message: str)
+
+    Senior accounts default to is_verified=False — admin must approve them
+    before they appear in the Mentor Directory.
     """
     email  = email.lower().strip()
     ph     = _hash_pw(pw)
     sa_hash = _hash_pw(security_a.strip().lower()) if security_a.strip() else ""
+
+    # Senior accounts need admin verification; everyone else is auto-verified
+    is_verified = (role != "senior")
 
     if _sb_available():
         try:
@@ -4146,15 +4169,26 @@ def _register_user(name: str, email: str, pw: str, role: str,
             payload = {"name": name, "email": email, "role": role,
                        "password_hash": ph,
                        "security_question": security_q,
-                       "security_answer_hash": sa_hash}
+                       "security_answer_hash": sa_hash,
+                       "specialty": specialty,
+                       "hospital": hospital,
+                       "is_verified": is_verified}
             r = requests.post(url, headers=_sb_headers(),
                               json=payload, timeout=8)
             if r.status_code == 400:
-                # Columns may not exist yet — retry without security fields
+                # Columns may not exist yet — retry with progressively fewer fields
                 payload2 = {"name": name, "email": email,
-                            "role": role, "password_hash": ph}
+                            "role": role, "password_hash": ph,
+                            "specialty": specialty, "hospital": hospital,
+                            "is_verified": is_verified}
                 r = requests.post(url, headers=_sb_headers(),
                                   json=payload2, timeout=8)
+                if r.status_code == 400:
+                    # Even simpler — just core fields
+                    payload3 = {"name": name, "email": email,
+                                "role": role, "password_hash": ph}
+                    r = requests.post(url, headers=_sb_headers(),
+                                      json=payload3, timeout=8)
             if r.status_code in (200, 201):
                 rows = r.json()
                 uid  = rows[0]["id"] if rows else "sb-" + email[:8]
@@ -4379,7 +4413,53 @@ def page_auth():
                                    key="reg_name")
             remail = st.text_input("Email", placeholder="your@email.com",
                                    key="reg_email")
-            rrole  = st.selectbox("Role", ["student","faculty"], key="reg_role")
+            rrole  = st.selectbox(
+                "Role",
+                ["student", "resident", "senior", "faculty"],
+                format_func=lambda x: {
+                    "student":  "🎓 Medical Student",
+                    "resident": "🩺 Resident / Junior Doctor",
+                    "senior":   "👨‍⚕️ Senior / Consultant Doctor",
+                    "faculty":  "👨‍🏫 Faculty / Teacher",
+                }.get(x, x),
+                key="reg_role",
+            )
+
+            # Specialty field for residents and seniors
+            rspec = ""
+            rhospital = ""
+            if rrole in ("resident", "senior"):
+                rspec = st.selectbox(
+                    "Specialty",
+                    [
+                        "General Medicine", "Cardiology",
+                        "Respiratory / Pulmonology", "Gastroenterology",
+                        "Endocrinology", "Neurology", "Nephrology",
+                        "Hematology / Oncology", "Infectious Diseases",
+                        "Rheumatology", "Emergency Medicine",
+                        "Critical Care / ICU", "General Surgery",
+                        "Orthopedics", "Obstetrics & Gynecology",
+                        "Pediatrics", "Psychiatry", "Dermatology",
+                        "Radiology", "Anesthesiology", "Family Medicine",
+                        "Other",
+                    ],
+                    key="reg_specialty",
+                )
+                rhospital = st.text_input(
+                    "Hospital / Affiliation (optional)",
+                    placeholder="e.g., University Hospital, Beirut",
+                    key="reg_hospital",
+                )
+
+                if rrole == "senior":
+                    st.info(
+                        "ℹ️ **Senior accounts require admin verification** "
+                        "before appearing in the mentor directory. You'll get full "
+                        "access to the platform immediately, but residents won't be "
+                        "able to book sessions with you until Dr. Hiba reviews your "
+                        "registration."
+                    )
+
             rpw    = st.text_input("Password", type="password", key="reg_pw")
             rpw2   = st.text_input("Confirm Password", type="password",
                                    key="reg_pw2")
@@ -4404,10 +4484,14 @@ def page_auth():
                     st.error("❌ Invalid email format.")
                 elif not rsa.strip():
                     st.warning("Please provide an answer to your security question.")
+                elif rrole in ("resident", "senior") and not rspec:
+                    st.warning("Please select your specialty.")
                 else:
                     with st.spinner("Creating your account..."):
                         ok, msg = _register_user(rname, remail, rpw, rrole,
-                                                 security_q=rsq, security_a=rsa)
+                                                 security_q=rsq, security_a=rsa,
+                                                 specialty=rspec,
+                                                 hospital=rhospital)
                     if ok:
                         user = _get_user(remail, rpw)
                         if not user:
@@ -4416,7 +4500,12 @@ def page_auth():
                             st.session_state.auth_user = user
                             st.session_state.page = "avatar_builder"
                             st.session_state["_new_registration"] = True
-                            st.success("✅ Account created! Let's set up your doctor avatar.")
+                            if rrole == "senior":
+                                st.success("✅ Account created! Your senior status is "
+                                           "pending admin verification. Set up your "
+                                           "avatar while you wait.")
+                            else:
+                                st.success("✅ Account created! Let's set up your doctor avatar.")
                             st.rerun()
                         else:
                             st.info("Account created. Please log in.")
@@ -4559,7 +4648,8 @@ with st.sidebar:
         st.markdown("---")
         st.markdown('<div style="color:#d97706;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 4px;">👨‍🏫 Faculty Portal</div>', unsafe_allow_html=True)
         faculty_pages=[("📊 Analytics Dashboard","analytics"),
-                       ("🏥 Case Creator","case_creator")]
+                       ("🏥 Case Creator","case_creator"),
+                       ("🛠️ Mentor Admin Panel","admin_mentors")]
         for label,pk in faculty_pages:
             if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
 
@@ -4568,6 +4658,8 @@ with st.sidebar:
     st.markdown('<div style="color:#64748b;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 4px;">🛠️ Tools</div>', unsafe_allow_html=True)
     tools=[("🏥 Add Real Case","add_case"),
            ("👥 Peer Simulation","peer_sim"),
+           ("👨‍⚕️ Mentor Directory","mentor_directory"),
+           ("📋 My Sessions","my_sessions"),
            ("🧮 Clinical Scores","scores"),
            ("📚 Evidence & Cases","evidence"),
            ("🌐 DocCollab","doccollab")]
@@ -13967,6 +14059,19 @@ elif p=="flashcards":
 elif p=="progress_dashboard":
     if TIER1_AVAILABLE: render_stats_dashboard()
     else: st.error("⚠️ tier1_features.py not found. Place it in the same folder as app.py.")
+# ── Mentor Directory: book sessions with senior doctors ──────────────────────
+elif p=="mentor_directory":
+    if MENTOR_DIRECTORY_OK: render_mentor_directory_page()
+    else: st.error("⚠️ mentor_directory.py not found. Place it in the same folder as app.py.")
+elif p=="admin_mentors":
+    if MENTOR_DIRECTORY_OK: render_admin_mentor_panel()
+    else: st.error("⚠️ mentor_directory.py not found. Place it in the same folder as app.py.")
+elif p=="my_sessions":
+    if MENTOR_DIRECTORY_OK: render_my_sessions_page()
+    else: st.error("⚠️ mentor_directory.py not found.")
+elif p=="jitsi_call":
+    if MENTOR_DIRECTORY_OK: render_jitsi_call_page()
+    else: st.error("⚠️ mentor_directory.py not found.")
 else: page_home()
 
 # ── Tier 1: floating "Ask Dr. Hiba" button + daily login init ────────────────

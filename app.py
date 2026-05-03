@@ -827,6 +827,128 @@ def get_working_model():
     """Return the model currently set (can be changed by user in settings)."""
     return st.session_state.get("active_model", GEMINI_MODEL)
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DEEPSEEK FALLBACK
+# ───────────────────────────────────────────────────────────────────────────
+# When all Gemini keys × all models are exhausted, try DeepSeek as a last
+# resort. DeepSeek has no per-minute rate limits and gives 5M free tokens
+# on signup. If DeepSeek also fails or isn't configured, we return the
+# regular friendly error.
+#
+# Setup: add to .streamlit/secrets.toml:
+#   DEEPSEEK_API_KEY = "sk-..."
+# Get a key at: https://platform.deepseek.com/
+# ═══════════════════════════════════════════════════════════════════════════
+def _deepseek_key() -> str:
+    try:
+        return (st.secrets.get("DEEPSEEK_API_KEY", "") or
+                st.secrets.get("DEEPSEEK_KEY", "")).strip()
+    except Exception:
+        return ""
+
+
+def _deepseek_available() -> bool:
+    return bool(_deepseek_key())
+
+
+def _gemini_history_to_openai(history: list) -> list:
+    """Convert Gemini-style history (role/parts) → OpenAI-style (role/content)."""
+    out = []
+    for msg in history:
+        role  = msg.get("role", "user")
+        parts = msg.get("parts", [])
+        text  = ""
+        for p in parts:
+            if isinstance(p, dict) and "text" in p:
+                text += p["text"] + "\n"
+            elif isinstance(p, str):
+                text += p + "\n"
+        text = text.strip()
+        if not text:
+            continue
+        # OpenAI uses 'assistant' instead of Gemini's 'model'
+        openai_role = "assistant" if role == "model" else role
+        out.append({"role": openai_role, "content": text})
+    return out
+
+
+def _call_deepseek(history: list, max_tokens: int = 1200,
+                    temperature: float = 0.7) -> str:
+    """
+    Call DeepSeek as a last-resort fallback.
+    Takes Gemini-style history; returns just the text (not !ERR-prefixed unless failed).
+    """
+    key = _deepseek_key()
+    if not key:
+        return "!ERR DeepSeek not configured."
+
+    try:
+        messages = _gemini_history_to_openai(history)
+        if not messages:
+            return "!ERR DeepSeek: empty messages."
+
+        # DeepSeek is OpenAI-compatible
+        url = "https://api.deepseek.com/v1/chat/completions"
+        payload = {
+            "model":      "deepseek-chat",  # cheap, fast workhorse
+            "messages":   messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type":  "application/json",
+        }
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        if r.status_code == 200:
+            data = r.json()
+            return data["choices"][0]["message"]["content"]
+        else:
+            return f"!ERR DeepSeek HTTP {r.status_code}"
+    except Exception as e:
+        return f"!ERR DeepSeek: {e}"
+
+
+def _call_deepseek_with_image(prompt: str, image_bytes: bytes,
+                                mime_type: str = "image/jpeg") -> str:
+    """
+    Image fallback. NOTE: DeepSeek-Chat doesn't natively support images yet.
+    If DeepSeek ever adds vision in the future this will work; for now it
+    returns a plain-text request asking the model to reason without the image.
+    """
+    key = _deepseek_key()
+    if not key:
+        return "!ERR DeepSeek not configured."
+
+    # DeepSeek-V3/Chat doesn't support images yet — degrade gracefully
+    fallback_prompt = (
+        f"{prompt}\n\n"
+        "(Note: image was provided but DeepSeek text-only fallback was used. "
+        "Please describe what you'd typically expect to see and what reasoning "
+        "you'd apply, based on the clinical context above.)"
+    )
+    try:
+        url = "https://api.deepseek.com/v1/chat/completions"
+        payload = {
+            "model": "deepseek-chat",
+            "messages": [{"role": "user", "content": fallback_prompt}],
+            "max_tokens": 1500,
+            "temperature": 0.3,
+        }
+        headers = {"Authorization": f"Bearer {key}",
+                   "Content-Type": "application/json"}
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        if r.status_code == 200:
+            text = r.json()["choices"][0]["message"]["content"]
+            return ("[Image not directly analyzed — DeepSeek text fallback used "
+                    "because Gemini quota was exhausted.]\n\n" + text)
+        else:
+            return f"!ERR DeepSeek HTTP {r.status_code}"
+    except Exception as e:
+        return f"!ERR DeepSeek: {e}"
+
+
 def try_all_models(payload_builder_fn):
     """Try each model × each key until one combination works. Returns (text, model_used)."""
     models_to_try = [st.session_state.get("active_model", GEMINI_MODEL)] + [
@@ -905,6 +1027,12 @@ def call_ai(system, messages, max_tokens=1200, credit_type="chat"):
                 except Exception as me:
                     last_err = str(me); continue
 
+        # ── ALL Gemini keys × models exhausted — try DeepSeek as last resort ──
+        if _deepseek_available():
+            ds_text = _call_deepseek(history, max_tokens=max_tokens, temperature=0.7)
+            if ds_text and not ds_text.startswith("!ERR"):
+                return ds_text + "\n\n*[Backup AI: DeepSeek]*"
+
         return f"!ERR The AI service is busy right now (free quota reached). Please try again in 1–2 minutes. Tip: switch to a lighter model in the sidebar if you keep seeing this."
     except Exception as e:
         return f"!ERR {e}"
@@ -932,6 +1060,13 @@ def call_ai_with_image(system, prompt, image_bytes, mime_type="image/jpeg"):
                 last_err = f"{key[:6]}…: rate limited"; continue
             else:
                 return f"!ERR {r.json().get('error',{}).get('message','Unknown')}"
+
+        # ── All Gemini keys exhausted — try DeepSeek (text-only fallback) ──
+        if _deepseek_available():
+            ds_text = _call_deepseek_with_image(prompt, image_bytes, mime_type)
+            if ds_text and not ds_text.startswith("!ERR"):
+                return ds_text
+
         return f"!ERR The AI service is busy right now (free quota reached). Please try again in 1–2 minutes."
     except Exception as e:
         return f"!ERR {e}"

@@ -91,6 +91,20 @@ except Exception as e:
     MENTOR_DIRECTORY_OK = False
     print(f"Mentor directory not loaded: {e}")
 
+# ── MCQ Hybrid System — auto MCQs after diagnosis ─────────────────────────────
+try:
+    from mcq_system import (
+        render_mcq_session_page,
+        render_mcq_admin_panel,
+        render_post_diagnosis_mcq_button,
+        generate_mcqs_for_case,
+        get_mcq_count_for_case,
+    )
+    MCQ_SYSTEM_OK = True
+except Exception as e:
+    MCQ_SYSTEM_OK = False
+    print(f"MCQ system not loaded: {e}")
+
 # ── Clinical helpers (real PubMed retrieval, specialist X-ray AI, feedback) ──
 try:
     from clinical_helpers import (
@@ -4784,7 +4798,8 @@ with st.sidebar:
         st.markdown('<div style="color:#d97706;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 4px;">👨‍🏫 Faculty Portal</div>', unsafe_allow_html=True)
         faculty_pages=[("📊 Analytics Dashboard","analytics"),
                        ("🏥 Case Creator","case_creator"),
-                       ("🛠️ Mentor Admin Panel","admin_mentors")]
+                       ("🛠️ Mentor Admin Panel","admin_mentors"),
+                       ("📝 MCQ Bank Manager","admin_mcqs")]
         for label,pk in faculty_pages:
             if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
 
@@ -5328,17 +5343,30 @@ def page_simulator():
 # ════════════════════════════════════════════════════════════════
 # ── Medical Audio Synthesizer ────────────────────────────────────────────────
 def get_sound_type(finding_text, exam_type, zone):
-    """Determine which sound to play based on findings."""
+    """
+    Determine which sound to play based on findings.
+    MODALITY-HONEST VERSION:
+    - Auscultation → returns auditory sound type (real + synth available)
+    - Percussion → returns 'percussion_*' synth-only types (real recordings rare)
+    - Palpation → returns 'none' (palpation is TACTILE — no audio at all)
+    - Inspection → returns 'none' (inspection is VISUAL — no audio at all)
+    """
     f = finding_text.lower()
     z = zone.lower()
     et = exam_type.lower()
 
+    # ═════ AUSCULTATION — Real audio modality ════════════════════════════
     if "auscultat" in et or "auscultation" in et:
         if "heart" in z or "cardiac" in z or "central chest" in z:
             if any(w in f for w in ["murmur","systolic","diastolic","regurgit","stenosis"]): return "murmur"
             if any(w in f for w in ["s3","s4","gallop","extra sound"]): return "s3_gallop"
             if any(w in f for w in ["rub","friction"]): return "pericardial_rub"
             return "normal_heart"
+        elif "abdom" in z or "quadrant" in z or "epigastric" in z or "umbilical" in z or "suprapubic" in z or "flank" in z:
+            # Bowel sound auscultation
+            if any(w in f for w in ["absent","silent","no bowel"]): return "bowel_absent"
+            if any(w in f for w in ["hyperactive","increased","hyperperist"]): return "bowel_hyperactive"
+            return "bowel_normal"
         else:  # lungs
             if any(w in f for w in ["crackle","crepitation","rales"]): return "crackles"
             if any(w in f for w in ["wheeze","wheezing","bronchospasm"]): return "wheeze"
@@ -5346,14 +5374,27 @@ def get_sound_type(finding_text, exam_type, zone):
             if any(w in f for w in ["reduced","absent","decreased","dull"]): return "reduced_breath"
             if any(w in f for w in ["pleural","rub"]): return "pleural_rub"
             return "normal_breath"
+
+    # ═════ PERCUSSION — Synth-only auditory (real recordings rare) ═══════
     elif "percuss" in et:
         if any(w in f for w in ["dull","stony dull","impaired"]): return "percussion_dull"
         if any(w in f for w in ["hyperresonant","hyper-resonant","tympanic"]): return "percussion_hyperresonant"
         return "percussion_resonant"
+
+    # ═════ PALPATION — TACTILE only, NO audio ════════════════════════════
+    # Palpation is felt with hands — not heard. Returning "none" tells the
+    # UI to render a tactile description panel instead of an audio player.
     elif "palpat" in et:
-        if any(w in f for w in ["tender","tenderness","pain","guarding","rebound"]): return "tenderness"
-        if any(w in f for w in ["mass","lump","organomegaly","hepatomegaly","splenomegaly"]): return "mass"
-        return "normal_palpation"
+        return "none"
+
+    # ═════ INSPECTION — VISUAL only, NO audio ════════════════════════════
+    elif "inspect" in et or "look" in et:
+        return "none"
+
+    # ═════ SPECIAL TESTS — usually visual or tactile ═════════════════════
+    elif "special" in et or "test" in et:
+        return "none"
+
     return "none"
 
 def render_medical_sound_player(sound_type, label="Play Sound"):
@@ -5370,6 +5411,149 @@ def render_medical_sound_player(sound_type, label="Play Sound"):
                                 render_synth_func=lambda st_: _render_medical_sound_player_synth(st_, label))
     else:
         _render_medical_sound_player_synth(sound_type, label)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODALITY-HONEST PANELS — for palpation (tactile) & inspection (visual)
+# ───────────────────────────────────────────────────────────────────────────
+# These are NOT audio. Palpation is felt with hands; inspection is visual.
+# Showing an "audio player" for these is dishonest — students aren't hearing
+# anything in real life when they palpate or inspect a patient.
+# Instead, we show an icon panel that names the modality clearly and lists
+# what to look/feel for, generated from the AI finding text.
+# ═══════════════════════════════════════════════════════════════════════════
+def render_tactile_modality_panel(finding_text: str, zone: str = ""):
+    """
+    Render an honest tactile-modality panel for palpation findings.
+    No audio — just a clear visual representation of WHAT is felt.
+    """
+    finding_lower = (finding_text or "").lower()
+
+    # Determine quality/icon based on finding
+    if any(w in finding_lower for w in ["tender", "pain", "rebound", "guarding"]):
+        title = "Tactile Finding · Tenderness"
+        icon = "🤚"
+        accent = "#dc2626"
+        bg = "#fef2f2"
+        borderc = "#fca5a5"
+        what_youd_feel = (
+            "Patient winces, withdraws, or verbally reports pain when this area is "
+            "pressed. May show voluntary or involuntary guarding."
+        )
+    elif any(w in finding_lower for w in ["mass", "lump", "organomegaly", "hepatomegaly",
+                                            "splenomegaly", "pulsatile"]):
+        title = "Tactile Finding · Mass / Organomegaly"
+        icon = "✋"
+        accent = "#7c3aed"
+        bg = "#faf5ff"
+        borderc = "#c4b5fd"
+        what_youd_feel = (
+            "A palpable abnormality felt under your fingertips: enlarged organ, "
+            "discrete mass, or pulsatile structure. Note: size, consistency, "
+            "mobility, tenderness, borders."
+        )
+    elif any(w in finding_lower for w in ["rigid", "rigidity", "board-like", "peritoniti"]):
+        title = "Tactile Finding · Rigidity"
+        icon = "🤲"
+        accent = "#b91c1c"
+        bg = "#fef2f2"
+        borderc = "#fca5a5"
+        what_youd_feel = (
+            "Abdominal wall is involuntarily tense and board-like. Suggests "
+            "peritoneal irritation. Patient cannot relax the muscles even on "
+            "request."
+        )
+    else:
+        title = "Tactile Finding · Normal Palpation"
+        icon = "🖐️"
+        accent = "#059669"
+        bg = "#f0fdf4"
+        borderc = "#86efac"
+        what_youd_feel = (
+            "Soft, non-tender, no masses, no organomegaly. Patient comfortable "
+            "with examination. No guarding or rebound."
+        )
+
+    components.html(f"""
+    <div style="border:2px solid {borderc};border-radius:12px;padding:14px;
+                background:{bg};margin:8px 0;font-family:Inter,system-ui,sans-serif;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <div style="background:{accent};color:white;border-radius:6px;
+                    padding:3px 10px;font-size:.7rem;font-weight:700;
+                    letter-spacing:.05em;">TACTILE · NO AUDIO</div>
+        <div style="font-weight:700;color:#0f172a;font-size:.9rem;">
+          {icon} {title}
+        </div>
+      </div>
+      <div style="font-size:.82rem;color:#1e293b;line-height:1.55;
+                  background:white;padding:10px 12px;border-radius:8px;
+                  margin-bottom:6px;">
+        <b style="color:{accent};">What you'd feel:</b> {what_youd_feel}
+      </div>
+      <div style="font-size:.7rem;color:#64748b;font-style:italic;">
+        Palpation is felt with the hands — it has no sound. Practice this on
+        real patients or simulation mannequins.
+      </div>
+    </div>
+    """, height=180)
+
+
+def render_visual_modality_panel(finding_text: str, zone: str = ""):
+    """
+    Render an honest visual-modality panel for inspection findings.
+    No audio — describes what the student would SEE.
+    """
+    finding_lower = (finding_text or "").lower()
+
+    if any(w in finding_lower for w in ["cyanosis", "cyanotic", "blue", "central cyano"]):
+        title = "Visual Finding · Cyanosis"
+        icon = "🟦"
+        accent = "#1e3a8a"
+        bg = "#eff6ff"
+        borderc = "#93c5fd"
+    elif any(w in finding_lower for w in ["jaundice", "icterus", "yellow"]):
+        title = "Visual Finding · Jaundice"
+        icon = "🟡"
+        accent = "#a16207"
+        bg = "#fefce8"
+        borderc = "#fde047"
+    elif any(w in finding_lower for w in ["pallor", "pale"]):
+        title = "Visual Finding · Pallor"
+        icon = "⚪"
+        accent = "#6b7280"
+        bg = "#f9fafb"
+        borderc = "#d1d5db"
+    elif any(w in finding_lower for w in ["distress", "diaphor", "anxious", "labored"]):
+        title = "Visual Finding · Distress"
+        icon = "😰"
+        accent = "#dc2626"
+        bg = "#fef2f2"
+        borderc = "#fca5a5"
+    else:
+        title = "Visual Finding · Inspection"
+        icon = "👁️"
+        accent = "#0e7490"
+        bg = "#ecfeff"
+        borderc = "#67e8f9"
+
+    components.html(f"""
+    <div style="border:2px solid {borderc};border-radius:12px;padding:14px;
+                background:{bg};margin:8px 0;font-family:Inter,system-ui,sans-serif;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <div style="background:{accent};color:white;border-radius:6px;
+                    padding:3px 10px;font-size:.7rem;font-weight:700;
+                    letter-spacing:.05em;">VISUAL · NO AUDIO</div>
+        <div style="font-weight:700;color:#0f172a;font-size:.9rem;">
+          {icon} {title}
+        </div>
+      </div>
+      <div style="font-size:.78rem;color:#475569;line-height:1.55;
+                  background:white;padding:10px 12px;border-radius:8px;">
+        Inspection is observation by sight. The AI-generated finding above
+        describes what would be visible. There is no sound to play.
+      </div>
+    </div>
+    """, height=140)
 
 
 def _render_medical_sound_player_synth(sound_type, label="Play Sound"):
@@ -5726,7 +5910,12 @@ def page_physical_exam():
     exam_type=st.selectbox("🔍 Select Examination Type:",
         ["🔊 Auscultation","👆 Palpation (Light)","👊 Palpation (Deep)","🥁 Percussion","👁️ Inspection","🧪 Special Test"])
 
-    st.markdown("**Click a body zone to examine — AI generates findings + plays the sound:**")
+    st.markdown("**Click a body zone to examine — AI generates clinically accurate findings:**")
+    st.caption(
+        "🔊 **Auscultation & Percussion** play sounds (real recordings + synthetic teaching tones). "
+        "🤚 **Palpation** shows tactile findings (no audio — palpation is felt, not heard). "
+        "👁️ **Inspection** shows visual findings (no audio — inspection is observed)."
+    )
 
     zones_chest=["Right Upper Chest","Left Upper Chest","Right Lower Chest","Left Lower Chest","Central Chest (Heart)","Posterior Right Upper","Posterior Right Lower","Posterior Left Upper","Posterior Left Lower"]
     zones_abdomen=["Right Upper Quadrant (RUQ)","Left Upper Quadrant (LUQ)","Right Lower Quadrant (RLQ)","Left Lower Quadrant (LLQ)","Epigastric Region","Periumbilical Region","Suprapubic Region","Right Flank","Left Flank"]
@@ -5742,11 +5931,21 @@ def page_physical_exam():
             sound_t=data.get("sound","none") if isinstance(data,dict) else get_sound_type(finding_text,exam_type,zone)
             col_f,col_s=st.columns([3,1])
             with col_f:
-                icon="🔊" if "Auscultat" in exam_type else "🥁" if "Percuss" in exam_type else "👆"
+                icon="🔊" if "Auscultat" in exam_type else "🥁" if "Percuss" in exam_type else "🤚" if "Palp" in exam_type else "👁️"
                 st.markdown(f'<div class="exam-finding">{icon} <b>{exam_type.split()[1]} — {zone}</b><br><span style="color:#374151;line-height:1.6">{finding_text}</span></div>',unsafe_allow_html=True)
             with col_s:
-                if sound_t!="none":
-                    render_medical_sound_player(sound_t,"🔊 Play")
+                # MODALITY-HONEST RENDERING:
+                # - Auscultation/Percussion → audio player (sound exists)
+                # - Palpation → tactile panel (NO audio — felt with hands)
+                # - Inspection → visual panel (NO audio — observed visually)
+                if "Auscultat" in exam_type or "Percuss" in exam_type:
+                    if sound_t!="none":
+                        render_medical_sound_player(sound_t,"🔊 Play")
+                elif "Palp" in exam_type:
+                    render_tactile_modality_panel(finding_text, zone)
+                elif "Inspect" in exam_type:
+                    render_visual_modality_panel(finding_text, zone)
+                # Special tests fall through silently (no panel needed)
         else:
             if st.button(f"🔍 Examine: {zone}",key=f"ex_{key[:40]}",use_container_width=True):
                 prompt=(f"Clinical simulation for MLS Academy.\n"
@@ -5786,7 +5985,7 @@ def page_physical_exam():
     if st.session_state.exam_findings:
         st.markdown("---")
         st.markdown("### 📋 Examination Findings & Clinical Sounds")
-        st.markdown('<div class="alert-info">🔊 Click <b>Play Sound</b> on any finding to hear the corresponding clinical sound matched to this case.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="alert-info">🔊 Auscultation & percussion findings have audio. 🤚 Palpation shows tactile descriptions (no audio). 👁️ Inspection shows visual descriptions (no audio).</div>', unsafe_allow_html=True)
         done=len(st.session_state.exam_findings)
         st.markdown(f"**{done} zone(s) examined**")
 
@@ -5801,13 +6000,19 @@ def page_physical_exam():
 
             if ftype!="All" and ftype.lower() not in etype.lower(): continue
 
-            icon="🔊" if "Auscultat" in etype else "🥁" if "Percuss" in etype else "👆" if "Palp" in etype else "👁️"
+            icon="🔊" if "Auscultat" in etype else "🥁" if "Percuss" in etype else "🤚" if "Palp" in etype else "👁️"
             col_f,col_s=st.columns([3,1])
             with col_f:
                 st.markdown(f'<div class="exam-finding">{icon} <b>{etype.split()[1] if len(etype.split())>1 else etype} — {zone}</b> <span style="font-size:.72rem;color:#9ca3af">⏰{t}</span><br><span style="color:#374151;line-height:1.6">{finding}</span></div>',unsafe_allow_html=True)
             with col_s:
-                if sound_t!="none":
-                    render_medical_sound_player(sound_t)
+                # MODALITY-HONEST RENDERING (same logic as do_exam)
+                if "Auscultat" in etype or "Percuss" in etype:
+                    if sound_t!="none":
+                        render_medical_sound_player(sound_t)
+                elif "Palp" in etype:
+                    render_tactile_modality_panel(finding, zone)
+                elif "Inspect" in etype:
+                    render_visual_modality_panel(finding, zone)
 
         # AI Clinical Summary
         if done>=2:
@@ -8116,6 +8321,10 @@ def page_diagnosis():
             st.session_state.submitted=True; st.balloons()
         else: st.warning("Please fill in both Diagnosis and Treatment Plan.")
     if st.session_state.submitted:
+        # ── Auto-prompt MCQs after final diagnosis ─────────────────────
+        if MCQ_SYSTEM_OK:
+            render_post_diagnosis_mcq_button()
+
         b1,b2,b3=st.columns(3)
         with b1:
             if st.button("📚 Another Case",use_container_width=True,type="primary"):
@@ -14207,6 +14416,13 @@ elif p=="my_sessions":
 elif p=="jitsi_call":
     if MENTOR_DIRECTORY_OK: render_jitsi_call_page()
     else: st.error("⚠️ mentor_directory.py not found.")
+# ── MCQ system: student session + admin panel ────────────────────────────────
+elif p=="mcq_session":
+    if MCQ_SYSTEM_OK: render_mcq_session_page()
+    else: st.error("⚠️ mcq_system.py not found. Place it in the same folder as app.py.")
+elif p=="admin_mcqs":
+    if MCQ_SYSTEM_OK: render_mcq_admin_panel()
+    else: st.error("⚠️ mcq_system.py not found.")
 else: page_home()
 
 # ── Tier 1: floating "Ask Dr. Hiba" button + daily login init ────────────────

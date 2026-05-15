@@ -105,6 +105,43 @@ except Exception as e:
     MCQ_SYSTEM_OK = False
     print(f"MCQ system not loaded: {e}")
 
+# ── AI Case Creator — Phase 1 of Knowledge Expansion ─────────────────────────
+try:
+    from case_creator import (
+        render_case_creator_panel,
+        load_approved_cases_from_db,
+        get_pending_cases_count,
+    )
+    CASE_CREATOR_OK = True
+except Exception as e:
+    CASE_CREATOR_OK = False
+    print(f"Case Creator not loaded: {e}")
+
+# ── Image Practice Library — Phase 2 of Knowledge Expansion ──────────────────
+try:
+    from image_library import (
+        render_image_practice_page,
+        render_image_admin_panel,
+        render_case_linked_images,
+        get_pending_images_count,
+    )
+    IMAGE_LIBRARY_OK = True
+except Exception as e:
+    IMAGE_LIBRARY_OK = False
+    print(f"Image Library not loaded: {e}")
+
+# ── RAG System — Phase 3: AI tutor cites real medical references ─────────────
+try:
+    from rag_system import (
+        render_rag_admin_panel,
+        search_relevant_chunks,
+        get_rag_context_for_query,
+    )
+    RAG_SYSTEM_OK = True
+except Exception as e:
+    RAG_SYSTEM_OK = False
+    print(f"RAG system not loaded: {e}")
+
 # ── Clinical helpers (real PubMed retrieval, specialist X-ray AI, feedback) ──
 try:
     from clinical_helpers import (
@@ -2217,6 +2254,29 @@ def load_cases():
     df["Difficulty"] = df["Difficulty"].fillna("basic").str.strip().str.lower()
     df["System"]     = df["System"].fillna("general").str.strip().str.lower()
     df["row_num"]    = range(len(df))
+
+    # ── Merge approved AI-generated cases from Supabase ─────────────────
+    # The AI Case Creator stores approved cases in `cases_extended` table.
+    # Combine them here so students see them seamlessly in the library.
+    try:
+        if CASE_CREATOR_OK:
+            ai_df = load_approved_cases_from_db()
+            if ai_df is not None and not ai_df.empty:
+                # Match the same columns as xlsx-loaded cases
+                ai_df["Case_ID"]    = ai_df["Case_ID"].astype(str)
+                ai_df["Difficulty"] = ai_df["Difficulty"].fillna("basic").astype(str).str.strip().str.lower()
+                ai_df["System"]     = ai_df["System"].fillna("general").astype(str).str.strip().str.lower()
+                # Continue row_num after the xlsx cases
+                ai_df["row_num"]    = range(len(df), len(df) + len(ai_df))
+                # Reindex columns to match df (missing → NaN)
+                for col in df.columns:
+                    if col not in ai_df.columns:
+                        ai_df[col] = None
+                ai_df = ai_df[df.columns]  # same column order
+                df = pd.concat([df, ai_df], ignore_index=True)
+    except Exception as _ai_err:
+        print(f"[load_cases] Could not merge AI cases: {_ai_err}")
+
     return df.reset_index(drop=True)
 
 def save_new_case(case_data):
@@ -4798,8 +4858,11 @@ with st.sidebar:
         st.markdown('<div style="color:#d97706;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 4px;">👨‍🏫 Faculty Portal</div>', unsafe_allow_html=True)
         faculty_pages=[("📊 Analytics Dashboard","analytics"),
                        ("🏥 Case Creator","case_creator"),
+                       ("✨ AI Case Creator","ai_case_creator"),
                        ("🛠️ Mentor Admin Panel","admin_mentors"),
-                       ("📝 MCQ Bank Manager","admin_mcqs")]
+                       ("📝 MCQ Bank Manager","admin_mcqs"),
+                       ("🩻 Image Library Manager","admin_images"),
+                       ("📖 Reference Library (RAG)","admin_rag")]
         for label,pk in faculty_pages:
             if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
 
@@ -4810,6 +4873,7 @@ with st.sidebar:
            ("👥 Peer Simulation","peer_sim"),
            ("👨‍⚕️ Mentor Directory","mentor_directory"),
            ("📋 My Sessions","my_sessions"),
+           ("🩻 Image Practice","image_practice"),
            ("🧮 Clinical Scores","scores"),
            ("📚 Evidence & Cases","evidence"),
            ("🌐 DocCollab","doccollab")]
@@ -7822,6 +7886,16 @@ def page_imaging():
                 st.markdown(f'''<div style="background:#f0f9ff;border-radius:12px;padding:1.2rem;border:2px solid #0ea5e9;">
                     <b>📋 Reported Findings:</b><br><span style="color:#1e3a5f;line-height:1.8">{img_data}</span>
                 </div>''', unsafe_allow_html=True)
+
+                # ── Display linked real radiological images for this case ──
+                if IMAGE_LIBRARY_OK:
+                    case_id = str(c.get("Case_ID","")).strip()
+                    if case_id:
+                        try:
+                            render_case_linked_images(case_id)
+                        except Exception as _imerr:
+                            print(f"[case viewer] could not render linked images: {_imerr}")
+
                 st.markdown('<div class="alert-warn">💡 <b>Tip:</b> Upload the actual image in Tab 1 for AI annotation and visual highlights.</div>', unsafe_allow_html=True)
 
     b1, b2 = st.columns(2)
@@ -8422,10 +8496,28 @@ def page_tutor():
             st.session_state.tutor_history.append({"role": "student", "content": q})
             msgs = [{"role": "user" if m["role"] == "student" else "assistant",
                      "content": m["content"]} for m in st.session_state.tutor_history]
+
+            # ── RAG: inject relevant medical references into system prompt ──
+            sys_with_rag = sys_t
+            if RAG_SYSTEM_OK:
+                try:
+                    rag_context = get_rag_context_for_query(q)
+                    if rag_context:
+                        sys_with_rag = sys_t + "\n\n" + rag_context
+
+                        st.session_state["_last_rag_used"] = True
+                except Exception as _rag_err:
+                    print(f"[tutor] RAG error: {_rag_err}")
+
             with st.spinner("Tutor thinking…"):
-                rep = call_ai(sys_t, msgs)
+                rep = call_ai(sys_with_rag, msgs)
             st.session_state.tutor_history.append({"role": "assistant", "content": rep})
             st.rerun()
+
+        # If the last response used RAG references, show a small badge
+        if st.session_state.get("_last_rag_used") and st.session_state.tutor_history:
+            st.caption("📖 Last response referenced your custom medical library")
+            st.session_state["_last_rag_used"] = False
 
         if c:
             st.markdown("**Quick hints:**")
@@ -14423,6 +14515,21 @@ elif p=="mcq_session":
 elif p=="admin_mcqs":
     if MCQ_SYSTEM_OK: render_mcq_admin_panel()
     else: st.error("⚠️ mcq_system.py not found.")
+# ── AI Case Creator: Faculty-only — separate from manual case_creator page ───
+elif p=="ai_case_creator":
+    if CASE_CREATOR_OK: render_case_creator_panel()
+    else: st.error("⚠️ case_creator.py not found. Place it in the same folder as app.py.")
+# ── Image Practice Library: student-facing + admin ────────────────────────────
+elif p=="image_practice":
+    if IMAGE_LIBRARY_OK: render_image_practice_page()
+    else: st.error("⚠️ image_library.py not found. Place it in the same folder as app.py.")
+elif p=="admin_images":
+    if IMAGE_LIBRARY_OK: render_image_admin_panel()
+    else: st.error("⚠️ image_library.py not found.")
+# ── RAG System: medical reference library admin (Phase 3) ──────────────────
+elif p=="admin_rag":
+    if RAG_SYSTEM_OK: render_rag_admin_panel()
+    else: st.error("⚠️ rag_system.py not found. Place it in the same folder as app.py.")
 else: page_home()
 
 # ── Tier 1: floating "Ask Dr. Hiba" button + daily login init ────────────────

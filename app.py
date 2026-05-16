@@ -142,6 +142,18 @@ except Exception as e:
     RAG_SYSTEM_OK = False
     print(f"RAG system not loaded: {e}")
 
+# ── Admin User Panel + Email Notifications ───────────────────────────────────
+try:
+    from admin_user_panel import (
+        render_user_management_panel,
+        send_broadcast_email,
+        fetch_all_users,
+    )
+    USER_PANEL_OK = True
+except Exception as e:
+    USER_PANEL_OK = False
+    print(f"User panel not loaded: {e}")
+
 # ── Clinical helpers (real PubMed retrieval, specialist X-ray AI, feedback) ──
 try:
     from clinical_helpers import (
@@ -4862,7 +4874,8 @@ with st.sidebar:
                        ("🛠️ Mentor Admin Panel","admin_mentors"),
                        ("📝 MCQ Bank Manager","admin_mcqs"),
                        ("🩻 Image Library Manager","admin_images"),
-                       ("📖 Reference Library (RAG)","admin_rag")]
+                       ("📖 Reference Library (RAG)","admin_rag"),
+                       ("👥 User Management","user_management")]
         for label,pk in faculty_pages:
             if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
 
@@ -14530,6 +14543,10 @@ elif p=="admin_images":
 elif p=="admin_rag":
     if RAG_SYSTEM_OK: render_rag_admin_panel()
     else: st.error("⚠️ rag_system.py not found. Place it in the same folder as app.py.")
+# ── User Management + Email Notifications ────────────────────────────────────
+elif p=="user_management":
+    if USER_PANEL_OK: render_user_management_panel()
+    else: st.error("⚠️ admin_user_panel.py not found. Place it in the same folder as app.py.")
 else: page_home()
 
 # ── Tier 1: floating "Ask Dr. Hiba" button + daily login init ────────────────

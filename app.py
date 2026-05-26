@@ -4845,7 +4845,8 @@ with st.sidebar:
            ("🔪 Surgery Room","surgery"),("🔴 Live Discussion","live"),
            ("📝 Submit Diagnosis","diagnosis"),("🤖 AI Tutor","tutor"),
            ("🧠 AI Tutor Cases","ai_tutor_cases"),
-           ("👨‍⚕️ My Avatar","avatar_builder")]
+           ("👨‍⚕️ My Avatar","avatar_builder"),
+           ("ℹ️ About","about")]
     for label,pk in pages:
         if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
 
@@ -4965,7 +4966,7 @@ def page_home():
             </div>
             <div style="font-size:.82rem;color:#475569;line-height:1.75;">
                 MLS Virtual Hospital is a <strong>24/7 clinical training environment</strong>
-                for Medical Laboratory Science students — simulating the full patient journey
+                for medical students and trainees — simulating the full patient journey
                 from triage to diagnosis in a safe, consequence-free setting.
             </div>
         </div>""", unsafe_allow_html=True)
@@ -4994,8 +4995,8 @@ def page_home():
                 Why We Are Different
             </div>
             <div style="font-size:.82rem;color:#475569;line-height:1.75;">
-                Powered by <strong>Gemini AI + a fine-tuned Clinical Tutor model</strong>,
-                every patient interaction is dynamic and unique — just like real patients.
+                Powered by <strong>advanced AI</strong>, every patient interaction is
+                dynamic and unique — just like real patients.
                 No two sessions are ever identical.
             </div>
         </div>""", unsafe_allow_html=True)
@@ -5115,9 +5116,126 @@ def page_home():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # ══════════════════════════════════════════════════════
+    # EDUCATIONAL DISCLAIMER + PROFESSIONAL FOOTER
+    # ══════════════════════════════════════════════════════
+    render_platform_footer()
+
 # ════════════════════════════════════════════════════════════════
-# CASE LIBRARY + RANDOM ASSIGNMENT
+# SHARED: PROFESSIONAL FOOTER + DISCLAIMER (used across pages)
 # ════════════════════════════════════════════════════════════════
+def render_platform_footer():
+    """Renders the educational disclaimer + professional footer.
+    Call at the bottom of key pages for consistent professionalism."""
+    st.markdown("""
+    <div style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;
+                padding:.9rem 1.2rem;margin:1rem 0;font-size:.78rem;color:#78350f;
+                line-height:1.55;">
+      <b>⚠️ Educational Use Only:</b> This platform is for medical education and
+      training purposes only. AI-generated content may contain inaccuracies.
+      Never use this platform's output for real patient care decisions. Always
+      verify clinical information against current authoritative sources.
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="border-top:1px solid #e2e8f0;margin-top:1.5rem;padding-top:1.2rem;
+                display:flex;justify-content:space-between;align-items:center;
+                flex-wrap:wrap;gap:1rem;font-size:.76rem;color:#64748b;">
+      <div>
+        <b style="color:#0a2540;">🏥 MLS Virtual Hospital</b><br>
+        Academy of Medical Learning Skills · Built by Hiba Hamdar<br>
+        © 2026 · Licensed under CC BY-NC-SA 4.0 · Educational use only
+      </div>
+      <div style="text-align:right;">
+        AI-Augmented Clinical Education Platform<br>
+        Not affiliated with any medical board or regulatory body<br>
+        Not for clinical decision-making
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════════════
+# ABOUT PAGE — credibility, mission, how it works, disclaimers
+# ════════════════════════════════════════════════════════════════
+def page_about():
+    st.markdown("""
+    <div class="main-header">
+        <h1>About MLS Virtual Hospital</h1>
+        <p>An AI-Augmented Clinical Education Platform for Medical Students</p>
+    </div>""", unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header">🎯 Our Mission</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:white;border-radius:12px;padding:1.5rem 1.8rem;
+                box-shadow:0 2px 8px rgba(0,0,0,.07);margin-bottom:1.2rem;
+                font-size:.92rem;color:#334155;line-height:1.8;">
+      Medical students spend years memorizing diseases — but often get too few
+      chances to <b>practice</b> managing patients before they reach a real ward.
+      MLS Virtual Hospital was built to close that gap.
+      <br><br>
+      Our mission is to give every medical student, anywhere in the world,
+      <b>free access</b> to realistic clinical training: simulated patients,
+      diagnostic reasoning, lab and imaging interpretation, auscultation practice,
+      and structured feedback — available 24/7 in a safe, consequence-free environment.
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header">⚙️ How It Works</div>', unsafe_allow_html=True)
+    steps = [
+        ("1", "Choose a case", "Pick from hundreds of real-style clinical cases across specialties, or get a randomly assigned one."),
+        ("2", "Work the patient up", "Take a history from the AI patient, perform a physical exam, order labs, and interpret imaging."),
+        ("3", "Submit your diagnosis", "Commit to a diagnosis and management plan, then receive structured AI feedback."),
+        ("4", "Test & retain", "Answer MCQs, review your reasoning, and track progress with XP and analytics."),
+    ]
+    cols = st.columns(4)
+    for col, (num, title, body) in zip(cols, steps):
+        with col:
+            st.markdown(f"""
+            <div style="background:white;border-radius:12px;padding:1.2rem 1rem;
+                        box-shadow:0 2px 8px rgba(0,0,0,.07);height:100%;
+                        border-top:4px solid #0e7490;">
+              <div style="background:#0e7490;color:white;width:30px;height:30px;
+                          border-radius:50%;display:flex;align-items:center;
+                          justify-content:center;font-weight:800;margin-bottom:.6rem;">
+                {num}
+              </div>
+              <div style="font-weight:800;color:#0a2540;font-size:.88rem;
+                          margin-bottom:.4rem;">{title}</div>
+              <div style="font-size:.78rem;color:#475569;line-height:1.6;">{body}</div>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header">👤 Who Built This</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:white;border-radius:12px;padding:1.5rem 1.8rem;
+                box-shadow:0 2px 8px rgba(0,0,0,.07);margin-bottom:1.2rem;
+                font-size:.9rem;color:#334155;line-height:1.8;">
+      MLS Virtual Hospital is developed by <b>Hiba Hamdar</b> at the
+      <b>Academy of Medical Learning Skills</b>. It is an independent
+      educational project built to make high-quality clinical training
+      accessible and free for medical students worldwide.
+      <br><br>
+      The platform is under active development, with new cases, features, and
+      content added regularly based on student and educator feedback.
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header">📚 How to Cite</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;
+                padding:1.2rem 1.4rem;margin-bottom:1.2rem;font-size:.82rem;
+                color:#334155;line-height:1.7;">
+      Hamdar, H. (2026). MLS Virtual Hospital: An AI-Augmented Clinical
+      Education Platform. Academy of Medical Learning Skills.
+      Licensed under CC BY-NC-SA 4.0.
+    </div>
+    """, unsafe_allow_html=True)
+
+    render_platform_footer()
+
 
 def assign_random_case(cases_df):
     """
@@ -14547,6 +14665,7 @@ elif p=="admin_rag":
 elif p=="user_management":
     if USER_PANEL_OK: render_user_management_panel()
     else: st.error("⚠️ admin_user_panel.py not found. Place it in the same folder as app.py.")
+elif p=="about": page_about()
 else: page_home()
 
 # ── Tier 1: floating "Ask Dr. Hiba" button + daily login init ────────────────

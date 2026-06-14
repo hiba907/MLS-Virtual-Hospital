@@ -4350,12 +4350,12 @@ def _get_user(email: str, pw: str):
             pass
 
     _DEMO = {
-        "hamdarhiba95@gmail.com": {"id":"admin-hiba","name":"Dr. Hiba Hamdar",
-                                   "email":"hamdarhiba95@gmail.com","role":"faculty",
-                                   "pw":_hash_pw("hiba123")},
-        "student@mls.edu":        {"id":"demo-student","name":"Student Demo",
-                                   "email":"student@mls.edu","role":"student",
-                                   "pw":_hash_pw("student123")},
+        "admin@mls.edu":   {"id":"demo-faculty","name":"Dr. Admin",
+                            "email":"admin@mls.edu","role":"faculty",
+                            "pw":_hash_pw("admin123")},
+        "student@mls.edu": {"id":"demo-student","name":"Student Demo",
+                            "email":"student@mls.edu","role":"student",
+                            "pw":_hash_pw("student123")},
     }
     u = _DEMO.get(email)
     if u and u["pw"] == ph:
@@ -4558,7 +4558,8 @@ def page_auth():
             email = st.text_input("Email", placeholder="your@email.com",
                                   key="login_email")
             pw    = st.text_input("Password", type="password", key="login_pw")
-            st.caption("Demo account — Student: `student@mls.edu` / `student123`")
+            st.caption("Demo accounts — Student: `student@mls.edu` / `student123` "
+                       "| Faculty: `admin@mls.edu` / `admin123`")
 
             if st.button("Login →", type="primary",
                          use_container_width=True, key="login_btn"):
@@ -8549,7 +8550,9 @@ def _load_clinical_tutor_model():
         return None, None
     try:
         from huggingface_hub import login as hf_login
-        hf_login(token="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")
+        hf_token = st.secrets.get("HF_TOKEN", "")
+        if hf_token:
+            hf_login(token=hf_token)
         model_name = "HamdarAI/clinical-tutor-model"
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForCausalLM.from_pretrained(
@@ -14588,49 +14591,20 @@ def page_case_exam():
     with col2: st.metric("🎙️ Format", "Oral Exam")
     with col3: st.metric("🤖 Graded by", "Llama3 AI")
     st.markdown('<div class="alert-info">ℹ️ <b>How it works:</b> Pick a medical case, answer Dr. Hiba\'s questions out loud, and get instant AI feedback.</div>', unsafe_allow_html=True)
+    st.markdown("### ✅ Before launching:")
+    st.markdown("- Ollama is running: open terminal → `ollama serve`\n- Microphone connected and allowed\n- You are on this PC (not remote)")
     st.markdown("---")
-
-    _user = st.session_state.get("auth_user") or {}
-    _role = _user.get("role", "student")
-
-    if _role == "faculty":
-        # Faculty/Admin: show the launch button
-        st.markdown("### ✅ Before launching:")
-        st.markdown("- Ollama is running: open terminal → `ollama serve`\n- Microphone connected and allowed\n- You are on this PC (not remote)")
-        st.markdown("---")
-        if st.button("🚀 Launch Exam with Dr. Hiba", type="primary", use_container_width=True):
-            import subprocess, sys
-            try:
-                script_path = r"C:\Users\TD\Desktop\Doctor_Avatar_Project\main.py"
-                if sys.platform == "win32":
-                    subprocess.Popen(["python", script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
-                else:
-                    st.warning("⚠️ Dr. Hiba's avatar runs locally on your Windows PC only.")
-                    st.info("💡 To use it, run the app locally on your Windows machine.")
-                    raise SystemExit
-                st.success("✅ Exam launched! Dr. Hiba's window will open on your desktop.")
-                st.info("💡 Keep MLS Hospital open while the exam runs.")
-            except SystemExit:
-                pass
-            except Exception as e:
-                st.error(f"❌ Could not launch: {e}")
-    else:
-        # Students: coming soon message
-        st.markdown("""
-        <div style="text-align:center;padding:3rem 2rem;background:linear-gradient(135deg,#f0f9ff,#e0f2fe);
-                    border-radius:16px;border:2px dashed #0e7490;margin-top:1rem;">
-            <div style="font-size:4rem;margin-bottom:1rem;">🎓</div>
-            <h2 style="color:#0a2540;margin-bottom:.5rem;">Coming Soon for Students!</h2>
-            <p style="color:#1a4f8a;font-size:1.05rem;max-width:500px;margin:0 auto;">
-                The AI oral exam with Dr. Hiba is currently available as a <b>supervised in-class activity</b>.<br><br>
-                An online version for remote access is <b>coming soon</b>. Stay tuned! 🚀
-            </p>
-            <div style="margin-top:1.5rem;padding:.8rem 1.5rem;background:#0e7490;color:white;
-                        border-radius:8px;display:inline-block;font-weight:600;">
-                🏥 In the meantime, explore Cases, MCQs, and the AI Tutor!
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+    if st.button("🚀 Launch Exam with Dr. Hiba", type="primary", use_container_width=True):
+        import subprocess
+        try:
+            subprocess.Popen(
+                ["python", r"C:\Users\TD\Desktop\Doctor_Avatar_Project\main.py"],
+                creationflags=subprocess.CREATE_NEW_CONSOLE
+            )
+            st.success("✅ Exam launched! Dr. Hiba's window will open on your desktop.")
+            st.info("💡 Keep MLS Hospital open while the exam runs.")
+        except Exception as e:
+            st.error(f"❌ Could not launch: {e}")
 
 # ════════════════════════════════════════════════════════
 p=st.session_state.page

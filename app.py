@@ -4890,7 +4890,7 @@ with st.sidebar:
            ("🩻 Image Practice","image_practice"),
            ("🧮 Clinical Scores","scores"),
            ("📚 Evidence & Cases","evidence"),
-           ("🌐 DocCollab","doccollab")
+           ("🌐 DocCollab","doccollab"),
            ("🎓 Case Exam — Dr. Hiba","case_exam")]
     for label,pk in tools:
         if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)

@@ -4890,7 +4890,8 @@ with st.sidebar:
            ("🩻 Image Practice","image_practice"),
            ("🧮 Clinical Scores","scores"),
            ("📚 Evidence & Cases","evidence"),
-           ("🌐 DocCollab","doccollab")]
+           ("🌐 DocCollab","doccollab")
+           ("🎓 Case Exam — Dr. Hiba","case_exam")]
     for label,pk in tools:
         if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
 
@@ -14665,6 +14666,28 @@ elif p=="admin_rag":
 elif p=="user_management":
     if USER_PANEL_OK: render_user_management_panel()
     else: st.error("⚠️ admin_user_panel.py not found. Place it in the same folder as app.py.")
+    def page_case_exam():
+    st.markdown('<div class="main-header"><h1>🎓 AI Case Exam — Dr. Hiba Hamdar</h1><p>Live oral exam with AI avatar · Speak your answers · Get instant feedback</p></div>', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns(3)
+    with col1: st.metric("📋 Cases Available", "16")
+    with col2: st.metric("🎙️ Format", "Oral Exam")
+    with col3: st.metric("🤖 Graded by", "Llama3 AI")
+    st.markdown('<div class="alert-info">ℹ️ <b>How it works:</b> Pick a medical case, answer Dr. Hiba\'s questions out loud, and get instant AI feedback.</div>', unsafe_allow_html=True)
+    st.markdown("### ✅ Before launching:")
+    st.markdown("- Ollama is running: open terminal → `ollama serve`\n- Microphone connected and allowed\n- You are on this PC (not remote)")
+    st.markdown("---")
+    if st.button("🚀 Launch Exam with Dr. Hiba", type="primary", use_container_width=True):
+        import subprocess
+        try:
+            subprocess.Popen(
+                ["python", r"C:\Users\TD\Desktop\Doctor_Avatar_Project\main.py"],
+                creationflags=subprocess.CREATE_NEW_CONSOLE
+            )
+            st.success("✅ Exam launched! Dr. Hiba's window will open on your desktop.")
+            st.info("💡 Keep MLS Hospital open while the exam runs.")
+        except Exception as e:
+            st.error(f"❌ Could not launch: {e}")
+elif p=="case_exam": page_case_exam()    
 elif p=="about": page_about()
 else: page_home()
 

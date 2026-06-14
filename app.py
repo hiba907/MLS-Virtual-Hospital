@@ -4350,12 +4350,12 @@ def _get_user(email: str, pw: str):
             pass
 
     _DEMO = {
-        "admin@mls.edu":   {"id":"demo-faculty","name":"Dr. Admin",
-                            "email":"admin@mls.edu","role":"faculty",
-                            "pw":_hash_pw("admin123")},
-        "student@mls.edu": {"id":"demo-student","name":"Student Demo",
-                            "email":"student@mls.edu","role":"student",
-                            "pw":_hash_pw("student123")},
+        "hamdarhiba95@gmail.com": {"id":"admin-hiba","name":"Dr. Hiba Hamdar",
+                                   "email":"hamdarhiba95@gmail.com","role":"faculty",
+                                   "pw":_hash_pw("hiba123")},
+        "student@mls.edu":        {"id":"demo-student","name":"Student Demo",
+                                   "email":"student@mls.edu","role":"student",
+                                   "pw":_hash_pw("student123")},
     }
     u = _DEMO.get(email)
     if u and u["pw"] == ph:
@@ -4558,8 +4558,7 @@ def page_auth():
             email = st.text_input("Email", placeholder="your@email.com",
                                   key="login_email")
             pw    = st.text_input("Password", type="password", key="login_pw")
-            st.caption("Demo accounts — Student: `student@mls.edu` / `student123` "
-                       "| Faculty: `admin@mls.edu` / `admin123`")
+            st.caption("Demo account — Student: `student@mls.edu` / `student123`")
 
             if st.button("Login →", type="primary",
                          use_container_width=True, key="login_btn"):

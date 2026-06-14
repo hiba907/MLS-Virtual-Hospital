@@ -14666,7 +14666,7 @@ elif p=="admin_rag":
 elif p=="user_management":
     if USER_PANEL_OK: render_user_management_panel()
     else: st.error("⚠️ admin_user_panel.py not found. Place it in the same folder as app.py.")
-    def page_case_exam():
+def page_case_exam():
     st.markdown('<div class="main-header"><h1>🎓 AI Case Exam — Dr. Hiba Hamdar</h1><p>Live oral exam with AI avatar · Speak your answers · Get instant feedback</p></div>', unsafe_allow_html=True)
     col1, col2, col3 = st.columns(3)
     with col1: st.metric("📋 Cases Available", "16")

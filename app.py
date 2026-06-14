@@ -14592,14 +14592,19 @@ def page_case_exam():
     st.markdown("- Ollama is running: open terminal → `ollama serve`\n- Microphone connected and allowed\n- You are on this PC (not remote)")
     st.markdown("---")
     if st.button("🚀 Launch Exam with Dr. Hiba", type="primary", use_container_width=True):
-        import subprocess
+        import subprocess, sys
         try:
-            subprocess.Popen(
-                ["python", r"C:\Users\TD\Desktop\Doctor_Avatar_Project\main.py"],
-                creationflags=subprocess.CREATE_NEW_CONSOLE
-            )
+            script_path = r"C:\Users\TD\Desktop\Doctor_Avatar_Project\main.py"
+            if sys.platform == "win32":
+                subprocess.Popen(["python", script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:
+                st.warning("⚠️ Dr. Hiba's avatar runs locally on your Windows PC only.")
+                st.info("💡 To use it, run the app locally on your Windows machine.")
+                raise SystemExit
             st.success("✅ Exam launched! Dr. Hiba's window will open on your desktop.")
             st.info("💡 Keep MLS Hospital open while the exam runs.")
+        except SystemExit:
+            pass
         except Exception as e:
             st.error(f"❌ Could not launch: {e}")
 

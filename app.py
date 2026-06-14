@@ -2497,7 +2497,13 @@ def can_use_credits(cost_type="chat"):
     """
     Check if user can afford this action.
     Returns (True, "") or (False, human_readable_message).
+    Faculty always get unlimited credits — no throttling.
     """
+    # ── Faculty bypass: unlimited credits always ──────────────────
+    _u = st.session_state.get("auth_user") or {}
+    if _u.get("role") == "faculty":
+        return True, ""
+
     cost = CREDIT_COSTS.get(cost_type, 1)
     state, _ = get_credit_state()
     remaining = get_credits_remaining(state)
@@ -2521,7 +2527,13 @@ def use_credits(cost_type="chat"):
     """
     Deduct credits for an action. Returns (True, "") or (False, message).
     Also persists the new state immediately.
+    Faculty are never charged credits.
     """
+    # Faculty bypass — no deduction
+    _u = st.session_state.get("auth_user") or {}
+    if _u.get("role") == "faculty":
+        return True, ""
+
     ok, msg = can_use_credits(cost_type)
     if not ok:
         return False, msg
@@ -4315,8 +4327,11 @@ def _sb_available() -> bool:
 def _get_user(email: str, pw: str):
     """
     Look up a user by email + password.
-    1. Try Supabase vh_users table
-    2. Fall back to built-in demo accounts
+    1. Try Supabase vh_users table (primary — all real accounts live here)
+    2. Fall through to session-only store if Supabase is unreachable
+
+    Demo hardcoded accounts (admin@mls.edu / student@mls.edu) have been REMOVED.
+    All users must register via the Register tab.
     """
     email = email.lower().strip()
     ph    = _hash_pw(pw)
@@ -4331,8 +4346,9 @@ def _get_user(email: str, pw: str):
             if r.status_code == 200:
                 rows = r.json()
                 if rows:
-                    # Email found in DB — check password
-                    if rows[0].get("password_hash") == ph:
+                    # Email found in DB — compare password hash
+                    stored_hash = rows[0].get("password_hash", "")
+                    if stored_hash == ph:
                         u = rows[0]
                         try:
                             requests.patch(
@@ -4343,23 +4359,14 @@ def _get_user(email: str, pw: str):
                         except Exception:
                             pass
                         return {"id": u["id"], "name": u["name"],
-                                "email": u["email"], "role": u.get("role","student")}
-                    return None  # Email found but wrong password
-                # Email not found in DB — fall through to demo accounts
+                                "email": u["email"], "role": u.get("role", "student")}
+                    # Email exists but password is wrong — stop immediately
+                    return None
+                # Email not found in Supabase — fall through to session store
         except Exception:
-            pass
+            pass  # Supabase unreachable — try session store below
 
-    _DEMO = {
-        "admin@mls.edu":   {"id":"demo-faculty","name":"Dr. Admin",
-                            "email":"admin@mls.edu","role":"faculty",
-                            "pw":_hash_pw("admin123")},
-        "student@mls.edu": {"id":"demo-student","name":"Student Demo",
-                            "email":"student@mls.edu","role":"student",
-                            "pw":_hash_pw("student123")},
-    }
-    u = _DEMO.get(email)
-    if u and u["pw"] == ph:
-        return {k:v for k,v in u.items() if k != "pw"}
+    # Supabase unavailable or email not found in DB → caller also tries _get_user_session
     return None
 
 def _register_user(name: str, email: str, pw: str, role: str,
@@ -4558,8 +4565,6 @@ def page_auth():
             email = st.text_input("Email", placeholder="your@email.com",
                                   key="login_email")
             pw    = st.text_input("Password", type="password", key="login_pw")
-            st.caption("Demo accounts — Student: `student@mls.edu` / `student123` "
-                       "| Faculty: `admin@mls.edu` / `admin123`")
 
             if st.button("Login →", type="primary",
                          use_container_width=True, key="login_btn"):

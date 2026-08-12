@@ -163,6 +163,17 @@ except Exception as e:
     USER_PANEL_OK = False
     print(f"User panel not loaded: {e}")
 
+# ── Diagnostic Delay → Complication Risk Simulator ──────────────────────────
+try:
+    from deterioration_simulator import page_deterioration_simulator
+    DETERIORATION_OK = True
+except Exception as e:
+    DETERIORATION_OK = False
+    print(f"Deterioration simulator not loaded: {e}")
+    def page_deterioration_simulator():
+        st.error("⚠️ deterioration_simulator.py not found. Place it (and "
+                 "deterioration_model.py + patient_data.py) next to app.py.")
+
 # ── Clinical helpers (real PubMed retrieval, specialist X-ray AI, feedback) ──
 try:
     from clinical_helpers import (
@@ -4875,6 +4886,7 @@ with st.sidebar:
               ("🎯 OSCE Exam Simulator","osce"),
               ("📋 Progress Notes","notes"),
               ("🃏 Flashcard Builder","flashcards"),
+              ("⏱️ Diagnostic Delay Simulator","deterioration"),
               ("⭐ My Progress (XP)","progress_dashboard")]
     for label,pk in advanced:
         if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
@@ -14631,6 +14643,10 @@ elif p=="analytics":     page_faculty_analytics()
 elif p=="case_creator":  page_case_creator()
 elif p=="ai_tutor_cases": page_ai_clinical_tutor()
 elif p=="avatar_builder": page_avatar_builder()
+# ── Diagnostic Delay → Complication Risk Simulator ──────────────────────────
+elif p=="deterioration":
+    if DETERIORATION_OK: page_deterioration_simulator()
+    else: st.error("⚠️ deterioration_simulator.py not found. Place it next to app.py.")
 # ── New feature pages ─────────────────────────────────────────────────────────
 elif p=="osce":
     if NEW_FEATURES_OK: page_osce_exam()

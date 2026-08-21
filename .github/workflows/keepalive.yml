@@ -1,0 +1,25 @@
+name: Supabase Keepalive
+
+on:
+  schedule:
+    # Runs every 3 days at 09:00 UTC
+    - cron: '0 9 */3 * *'
+  workflow_dispatch: {}   # lets you trigger it manually from the Actions tab to test
+
+jobs:
+  ping-projects:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping MLS Virtual Hospital
+        run: |
+          curl -s -o /dev/null -w "MLS Virtual Hospital -> HTTP %{http_code}\n" \
+            "https://udleavsgrlrszcmkbexm.supabase.co/rest/v1/vh_users?select=id&limit=1" \
+            -H "apikey: ${{ secrets.VH_SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.VH_SUPABASE_ANON_KEY }}"
+
+      - name: Ping MLS Academy
+        run: |
+          curl -s -o /dev/null -w "MLS Academy -> HTTP %{http_code}\n" \
+            "https://czveautjgyakinweqfaa.supabase.co/rest/v1/platform_users?select=id&limit=1" \
+            -H "apikey: ${{ secrets.ACADEMY_SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.ACADEMY_SUPABASE_ANON_KEY }}"

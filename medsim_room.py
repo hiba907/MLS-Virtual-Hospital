@@ -42,6 +42,8 @@ from deterioration import DeteriorationEngine, CASES
 from medsim_anatomy_viewer import render_anatomy_explorer
 from medsim_code_blue import render_code_blue_overlay, is_arrest_rhythm
 from medsim_cpr import render_cpr_trainer
+from medsim_case_library import (list_custom_cases, row_to_case,
+                                  render_case_author_ui, delete_case)
 
 # Reuse ONE engine instance across reruns via session_state (Streamlit reruns
 # the whole script on every interaction, so the engine must not be recreated).
@@ -83,12 +85,50 @@ def page_medsim_room():
 
     # ── Case selection / start ──────────────────────────────────────────────
     if room_id not in engine.active_rooms:
-        case_id = st.selectbox("Select a case", list(CASES.keys()),
-                                format_func=lambda c: CASES[c].name)
-        if st.button("▶ Start Case", type="primary"):
-            engine.start_case(room_id, case_id)
-            st.session_state.pop("medsim_iv_dismissed", None)
-            st.rerun()
+        tab_run, tab_author = st.tabs(["▶ Run a Case", "✍️ Author New Case"])
+
+        with tab_author:
+            render_case_author_ui()
+            st.markdown("---")
+            customs = list_custom_cases()
+            if customs:
+                st.caption("Your saved custom cases:")
+                for c in customs:
+                    cc1, cc2 = st.columns([5, 1])
+                    cc1.markdown(f"**{c['name']}** — `{c['case_id']}`")
+                    if cc2.button("🗑 Delete", key=f"del_{c['case_id']}"):
+                        delete_case(c["case_id"])
+                        st.rerun()
+
+        with tab_run:
+            custom_rows = {c["case_id"]: c for c in list_custom_cases()}
+            all_case_ids = list(CASES.keys()) + list(custom_rows.keys())
+
+            def _fmt(cid):
+                if cid in CASES:
+                    return f"📖 {CASES[cid].name}"
+                return f"✍️ {custom_rows[cid]['name']} (custom)"
+
+            case_id = st.selectbox("Select a case", all_case_ids, format_func=_fmt)
+            if st.button("▶ Start Case", type="primary"):
+                if case_id in CASES:
+                    engine.start_case(room_id, case_id)
+                else:
+                    from deterioration import Vitals
+                    import time as _time
+                    case_obj = row_to_case(custom_rows[case_id])
+                    bv = case_obj.baseline_vitals
+                    engine.active_rooms[room_id] = {
+                        "case_id": case_id, "case": case_obj,
+                        "vitals": Vitals(hr=bv.hr, bp_sys=bv.bp_sys, bp_dia=bv.bp_dia,
+                                          spo2=bv.spo2, rr=bv.rr, temp=bv.temp,
+                                          etco2=bv.etco2, rhythm=bv.rhythm),
+                        "start_time": _time.time(), "current_phase": 0, "status": "stable",
+                        "alerts": [], "actions": [], "patient": case_obj.patient.copy(),
+                        "occupied": False, "occupied_by": None,
+                    }
+                st.session_state.pop("medsim_iv_dismissed", None)
+                st.rerun()
         return
 
     state = engine.tick(room_id)

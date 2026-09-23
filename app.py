@@ -174,6 +174,17 @@ except Exception as e:
         st.error("⚠️ deterioration_simulator.py not found. Place it (and "
                  "deterioration_model.py + patient_data.py) next to app.py.")
 
+# ── MedSim Room — live vitals engine + anatomy explorer + guided IV needle ──
+try:
+    from medsim_room import page_medsim_room
+    MEDSIM_ROOM_OK = True
+except Exception as e:
+    MEDSIM_ROOM_OK = False
+    print(f"MedSim Room not loaded: {e}")
+    def page_medsim_room():
+        st.error("⚠️ medsim_room.py (and deterioration.py, "
+                 "medsim_anatomy_viewer.py) not found next to app.py.")
+
 # ── Clinical helpers (real PubMed retrieval, specialist X-ray AI, feedback) ──
 try:
     from clinical_helpers import (
@@ -4881,6 +4892,7 @@ with st.sidebar:
     advanced=[("🧬 Differential Diagnosis","ddx"),
               ("💊 Drug Prescribing","prescribing"),
               ("🩺 Procedure Simulator","procedures"),
+              ("🚑 MedSim Room","medsim_room"),
               ("🧠 Clinical Reasoning Map","reasoning"),
               ("🏆 Competency Tracker","competency"),
               ("🎯 OSCE Exam Simulator","osce"),
@@ -14643,6 +14655,9 @@ elif p=="analytics":     page_faculty_analytics()
 elif p=="case_creator":  page_case_creator()
 elif p=="ai_tutor_cases": page_ai_clinical_tutor()
 elif p=="avatar_builder": page_avatar_builder()
+elif p=="medsim_room":
+    if MEDSIM_ROOM_OK: page_medsim_room()
+    else: st.error("⚠️ medsim_room.py not found next to app.py.")
 # ── Diagnostic Delay → Complication Risk Simulator ──────────────────────────
 elif p=="deterioration":
     if DETERIORATION_OK: page_deterioration_simulator()

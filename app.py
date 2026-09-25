@@ -185,6 +185,26 @@ except Exception as e:
         st.error("⚠️ medsim_room.py (and deterioration.py, "
                  "medsim_anatomy_viewer.py) not found next to app.py.")
 
+# ── Multi-Patient Caseload — ASHM Fellowship, Months 1-2 ─────────────────────
+try:
+    from medsim_multipatient import page_multipatient_board
+    MEDSIM_MP_OK = True
+except Exception as e:
+    MEDSIM_MP_OK = False
+    print(f"Multi-Patient board not loaded: {e}")
+    def page_multipatient_board():
+        st.error("⚠️ medsim_multipatient.py (and medsim_pager.py) not found next to app.py.")
+
+# ── ASHM Fellowship — its own section, built on top of the above ────────────
+try:
+    from ashm_fellowship import page_ashm_fellowship
+    ASHM_OK = True
+except Exception as e:
+    ASHM_OK = False
+    print(f"ASHM Fellowship not loaded: {e}")
+    def page_ashm_fellowship():
+        st.error("⚠️ ashm_fellowship.py (and medsim_case_intake.py) not found next to app.py.")
+
 # ── Clinical helpers (real PubMed retrieval, specialist X-ray AI, feedback) ──
 try:
     from clinical_helpers import (
@@ -4893,6 +4913,7 @@ with st.sidebar:
               ("💊 Drug Prescribing","prescribing"),
               ("🩺 Procedure Simulator","procedures"),
               ("🚑 MedSim Room","medsim_room"),
+              ("🏥 Multi-Patient Caseload","medsim_multipatient"),
               ("🧠 Clinical Reasoning Map","reasoning"),
               ("🏆 Competency Tracker","competency"),
               ("🎯 OSCE Exam Simulator","osce"),
@@ -4902,6 +4923,12 @@ with st.sidebar:
               ("⭐ My Progress (XP)","progress_dashboard")]
     for label,pk in advanced:
         if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
+
+    # ── Navigation — ASHM Fellowship (its own section) ─────────────
+    st.markdown("---")
+    st.markdown('<div style="color:#64748b;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 4px;">🎓 ASHM Fellowship</div>', unsafe_allow_html=True)
+    if st.button("🩺 Fellowship in AI-Simulated Hospital Medicine", use_container_width=True, key="nav_ashm_fellowship"):
+        nav("ashm_fellowship")
 
     # ── Navigation — Faculty (only shown to faculty) ───────────────
     if _is_faculty:
@@ -14658,6 +14685,12 @@ elif p=="avatar_builder": page_avatar_builder()
 elif p=="medsim_room":
     if MEDSIM_ROOM_OK: page_medsim_room()
     else: st.error("⚠️ medsim_room.py not found next to app.py.")
+elif p=="medsim_multipatient":
+    if MEDSIM_MP_OK: page_multipatient_board()
+    else: st.error("⚠️ medsim_multipatient.py not found next to app.py.")
+elif p=="ashm_fellowship":
+    if ASHM_OK: page_ashm_fellowship()
+    else: st.error("⚠️ ashm_fellowship.py not found next to app.py.")
 # ── Diagnostic Delay → Complication Risk Simulator ──────────────────────────
 elif p=="deterioration":
     if DETERIORATION_OK: page_deterioration_simulator()

@@ -14,23 +14,58 @@ right one for their device — nothing is silently downgraded or upgraded:
      camera (laptop, Android, or iPhone — including Pro/LiDAR models) can
      expose that to a browser. See NOTE_ON_LIDAR below for why.
 
-  2. "depth_hardware" (future): a placeholder tier for when real depth
-     data is available — either a native iOS LiDAR app (see
-     medsim_lidar_ios_SCOPE.md) or a dedicated depth camera / sensor
-     manikin. This tier reads from `st.session_state.medsim_depth_stream`
-     if something (a future bridge) populates it; otherwise it tells the
-     student honestly that no depth device is connected and offers the
-     webcam trainer instead.
+  2. "depth_hardware": real depth data from the native iPhone LiDAR app
+     (see ios_lidar_cpr/) — that app posts compressions directly to the
+     `vh_cpr_depth_stream` Supabase table, tagged with a short session
+     code. This tier generates that code, shows it to the student, and
+     polls the table for matching rows. If the app hasn't posted anything
+     yet, it says so plainly rather than showing a fake reading — the
+     Swift app itself is a first draft (see ios_lidar_cpr/README.md),
+     untested on real hardware, so this Python side has never seen real
+     data flow through it either.
 
 NOTE_ON_LIDAR: Safari does not expose ARKit/LiDAR depth to JavaScript —
 that data is only available to native iOS apps. So "use your iPhone's
 camera in the browser" is, technically, the same RGB-only tier as any
-other device. Real depth requires the native app project scoped separately.
+other device. Real depth requires the native app in ios_lidar_cpr/.
+
+Requires one new Supabase table (see ios_lidar_cpr/README.md for the exact
+CREATE TABLE statement): vh_cpr_depth_stream.
 """
 
 import time
+import uuid
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
+
+DEPTH_TABLE = "vh_cpr_depth_stream"
+
+
+def _sb_creds():
+    return st.secrets.get("SUPABASE_URL", ""), st.secrets.get("SUPABASE_KEY", "")
+
+
+def _sb_available() -> bool:
+    url, key = _sb_creds()
+    return bool(url and key and not url.startswith("YOUR_"))
+
+
+def _sb_headers(key: str) -> dict:
+    return {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+
+def _poll_depth_stream(session_code: str, since_id: int = 0) -> list:
+    if not _sb_available():
+        return []
+    url, key = _sb_creds()
+    try:
+        r = requests.get(f"{url}/rest/v1/{DEPTH_TABLE}", headers=_sb_headers(key),
+                          params={"select": "*", "session_code": f"eq.{session_code}",
+                                  "id": f"gt.{since_id}", "order": "id.asc"}, timeout=8)
+        return r.json() if r.status_code == 200 else []
+    except Exception:
+        return []
 
 
 def _cpr_webcam_html(target_rate: int = 110) -> str:
@@ -152,19 +187,48 @@ def render_cpr_trainer(target_rate: int = 110, height: int = 460):
         return
 
     if tier == "depth_hardware":
-        depth_stream = st.session_state.get("medsim_depth_stream")
-        if not depth_stream:
-            st.error(
-                "No depth device connected yet. This tier is reserved for a future native "
-                "iPhone LiDAR app (or a depth camera / sensor manikin) that streams real "
-                "compression depth into this session — none is connected right now."
-            )
-            if st.button("← Use webcam trainer instead"):
-                st.session_state.medsim_cpr_tier = "webcam"
-                st.rerun()
+        if not _sb_available():
+            st.error("Supabase not configured — the depth stream needs it, same as everything else in this app.")
             return
-        # Future: render real depth-based feedback from depth_stream here.
-        st.success("Depth device connected.")
+
+        code = st.session_state.setdefault("medsim_cpr_session_code", uuid.uuid4().hex[:6].upper())
+        st.info(f"📱 **Session code: `{code}`** — enter this exact code in the iPhone app "
+                f"(ios_lidar_cpr) and tap Start there.")
+        st.caption("This tier depends on the native iOS app in ios_lidar_cpr/, which was "
+                   "written but never run on real hardware — if nothing shows up below after "
+                   "you start the phone app, that's the first thing to debug on-device, not "
+                   "necessarily this page.")
+
+        since_id = st.session_state.get("medsim_cpr_last_id", 0)
+        new_rows = _poll_depth_stream(code, since_id)
+        if new_rows:
+            st.session_state.medsim_cpr_last_id = new_rows[-1]["id"]
+            st.session_state.setdefault("medsim_cpr_depth_history", [])
+            st.session_state.medsim_cpr_depth_history.extend(new_rows)
+
+        history = st.session_state.get("medsim_cpr_depth_history", [])
+        if not history:
+            st.warning("No compressions received yet. Waiting for the phone app to start streaming…")
+        else:
+            latest = history[-1]
+            c1, c2, c3 = st.columns(3)
+            depth = latest.get("depth_cm", 0) or 0
+            rate = latest.get("rate_per_min", 0) or 0
+            c1.metric("Depth", f"{depth:.1f} cm", delta="target 5-6 cm")
+            c2.metric("Rate", f"{rate:.0f} /min", delta="target 100-120")
+            c3.metric("Compressions", len(history))
+            in_range = 5.0 <= depth <= 6.0 and 100 <= rate <= 120
+            st.success("✅ In target range") if in_range else st.warning("Outside AHA target range")
+
+        if st.button("← Back to device choice"):
+            st.session_state.pop("medsim_cpr_tier", None)
+            st.session_state.pop("medsim_cpr_session_code", None)
+            st.session_state.pop("medsim_cpr_last_id", None)
+            st.session_state.pop("medsim_cpr_depth_history", None)
+            st.rerun()
+
+        time.sleep(1)
+        st.rerun()
         return
 
     # tier == "webcam"

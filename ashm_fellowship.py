@@ -30,6 +30,7 @@ see ashm_ai_audit.py, ashm_peer_teaching.py.)
 
 import requests
 import streamlit as st
+from medsim_case_intake import render_intake_pipeline
 from medsim_multipatient import page_multipatient_board
 from medsim_pager import request_pager_permission
 from medsim_case_library import render_case_author_ui

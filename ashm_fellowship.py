@@ -28,13 +28,18 @@ Teaching, and Population Health modules each need their own tables too —
 see ashm_ai_audit.py, ashm_peer_teaching.py.)
 """
 
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from datetime import datetime
+
 import requests
 import streamlit as st
 from medsim_case_intake import render_intake_pipeline
 from medsim_multipatient import page_multipatient_board
 from medsim_pager import request_pager_permission
 from medsim_case_library import render_case_author_ui
-from ashm_curriculum import render_curriculum_tracker
+from ashm_curriculum import render_curriculum_tracker, render_admin_roster, enroll, get_enrollment
 from ashm_handoff import page_handoff_tracker
 from ashm_ai_audit import page_ai_audit
 from ashm_peer_teaching import page_peer_teaching
@@ -70,6 +75,81 @@ def _submit_application(row: dict) -> tuple:
         return (True, "Submitted.") if r.status_code in (200, 201) else (False, f"Failed: {r.text[:200]}")
     except Exception as e:
         return False, f"Failed: {e}"
+
+
+def _list_applications(status: str = None) -> list:
+    if not _sb_available():
+        return []
+    url, key = _sb_creds()
+    params = {"select": "*", "order": "created_at.desc"}
+    if status:
+        params["status"] = f"eq.{status}"
+    try:
+        r = requests.get(f"{url}/rest/v1/{APP_TABLE}", headers=_sb_headers(key), params=params, timeout=10)
+        return r.json() if r.status_code == 200 else []
+    except Exception:
+        return []
+
+
+def _update_application(applicant_email: str, fields: dict) -> bool:
+    if not _sb_available():
+        return False
+    url, key = _sb_creds()
+    try:
+        r = requests.patch(f"{url}/rest/v1/{APP_TABLE}", headers=_sb_headers(key),
+                            params={"applicant_email": f"eq.{applicant_email}"}, json=fields, timeout=10)
+        return r.status_code in (200, 204)
+    except Exception:
+        return False
+
+
+def _send_application_notification_email(name: str, email: str, specialties: list):
+    """Notify the admin inbox of a new fellowship application — reuses the
+    same NOTIFY_EMAIL / NOTIFY_EMAIL_PASSWORD Gmail SMTP setup app.py
+    already uses for registration notifications, so no new secrets are
+    needed if that's already configured."""
+    try:
+        notify_to = st.secrets.get("NOTIFY_EMAIL", "")
+        notify_pw = st.secrets.get("NOTIFY_EMAIL_PASSWORD", "")
+        if not notify_to or not notify_pw:
+            return
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "🎓 New ASHM Fellowship Application — MLS Academy"
+        msg["From"] = notify_to
+        msg["To"] = notify_to
+        body_html = f"""
+        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;
+                    border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+          <div style="background:linear-gradient(135deg,{NAVY},{BLUE});
+                      padding:20px;text-align:center;color:white;">
+            <div style="font-size:2rem;">🎓</div>
+            <div style="font-size:1.2rem;font-weight:700;">ASHM Fellowship</div>
+            <div style="font-size:.8rem;opacity:.75;">New Application Pending Review</div>
+          </div>
+          <div style="padding:24px;background:#ffffff;">
+            <table style="width:100%;border-collapse:collapse;">
+              <tr><td style="padding:8px;color:#64748b;font-size:.85rem;">Name</td>
+                  <td style="padding:8px;font-weight:600;">{name}</td></tr>
+              <tr style="background:#f8fafc;">
+                  <td style="padding:8px;color:#64748b;font-size:.85rem;">Email</td>
+                  <td style="padding:8px;font-weight:600;">{email}</td></tr>
+              <tr><td style="padding:8px;color:#64748b;font-size:.85rem;">Specialties</td>
+                  <td style="padding:8px;font-weight:600;">{", ".join(specialties)}</td></tr>
+              <tr style="background:#f8fafc;">
+                  <td style="padding:8px;color:#64748b;font-size:.85rem;">Time</td>
+                  <td style="padding:8px;font-weight:600;">{datetime.now().strftime("%Y-%m-%d %H:%M UTC")}</td></tr>
+            </table>
+            <p style="color:#64748b;font-size:.85rem;margin-top:16px;">
+              Review it in ASHM Fellowship → Accreditation & Partners →
+              Applications (Faculty) in the app.</p>
+          </div>
+        </div>"""
+        msg.attach(MIMEText(body_html, "html"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(notify_to, notify_pw)
+            server.sendmail(notify_to, notify_to, msg.as_string())
+    except Exception:
+        pass  # never block the application because email failed
 
 
 def _header():
@@ -254,7 +334,49 @@ def _render_apply():
                     "specialties_completed": specialties, "reflection": reflection.strip(),
                     "status": "pending",
                 })
-                st.success("✅ Application submitted — faculty review to follow.") if ok else st.error(msg)
+                if ok:
+                    _send_application_notification_email(name.strip(), email.strip(), specialties)
+                    st.success("✅ Application submitted — faculty review to follow.")
+                else:
+                    st.error(msg)
+
+
+def _render_review_applications_tab():
+    st.markdown("### 👨‍🏫 Faculty: Review Applications")
+    is_faculty = st.session_state.get("auth_user", {}).get("role", "") in ("faculty", "admin")
+    if not is_faculty:
+        st.info("This tab is for faculty/admin accounts. If you should have access, "
+                "ask an admin to set your account role to 'faculty' or 'admin'.")
+        return
+
+    pending = _list_applications("pending")
+    if not pending:
+        st.info("No pending applications right now.")
+    for app_row in pending:
+        with st.expander(f"{app_row['applicant_name']} — {app_row['applicant_email']}"):
+            st.write(f"**Specialties:** {', '.join(app_row.get('specialties_completed') or [])}")
+            st.write(f"**Reflection:** {app_row.get('reflection','')}")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✅ Accept", key=f"acc_{app_row['id']}", type="primary"):
+                    _update_application(app_row["applicant_email"], {"status": "accepted"})
+                    if not get_enrollment(app_row["applicant_email"]):
+                        import datetime as _dt
+                        enroll(app_row["applicant_email"], app_row["applicant_name"], _dt.date.today())
+                    st.success(f"Accepted {app_row['applicant_name']} — enrolled in the "
+                               f"Curriculum starting today.")
+                    st.rerun()
+            with c2:
+                if st.button("❌ Decline", key=f"dec_{app_row['id']}"):
+                    _update_application(app_row["applicant_email"], {"status": "declined"})
+                    st.rerun()
+
+    reviewed = [a for a in _list_applications() if a.get("status") != "pending"]
+    if reviewed:
+        with st.expander(f"📄 Reviewed applications ({len(reviewed)})"):
+            for a in reviewed:
+                icon = "✅" if a["status"] == "accepted" else "❌"
+                st.markdown(f"{icon} **{a['applicant_name']}** ({a['applicant_email']}) — {a['status']}")
 
 
 def _render_pager_alerts_tab():
@@ -269,8 +391,8 @@ def _render_pager_alerts_tab():
 
 def page_ashm_fellowship():
     _header()
-    tabs = st.tabs(["Overview", "Accreditation & Partners", "Apply", "Curriculum",
-                     "Case Intake & Review", "Pager Alerts"])
+    tabs = st.tabs(["Overview", "Accreditation & Partners", "Apply", "Review Applications (Faculty)",
+                     "Fellows Roster (Admin)", "Curriculum", "Case Intake & Review", "Pager Alerts"])
     with tabs[0]:
         _render_overview()
     with tabs[1]:
@@ -278,6 +400,10 @@ def page_ashm_fellowship():
     with tabs[2]:
         _render_apply()
     with tabs[3]:
+        _render_review_applications_tab()
+    with tabs[4]:
+        render_admin_roster()
+    with tabs[5]:
         render_curriculum_tracker({
             "medsim_multipatient": page_multipatient_board,
             "ashm_handoff": page_handoff_tracker,
@@ -286,7 +412,7 @@ def page_ashm_fellowship():
             "ashm_population_health": page_population_health,
             "ashm_fellowship_author": render_case_author_ui,
         })
-    with tabs[4]:
+    with tabs[6]:
         render_intake_pipeline()
-    with tabs[5]:
+    with tabs[7]:
         _render_pager_alerts_tab()

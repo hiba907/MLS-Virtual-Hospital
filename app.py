@@ -205,6 +205,16 @@ except Exception as e:
     def page_ashm_fellowship():
         st.error("⚠️ ashm_fellowship.py (and medsim_case_intake.py) not found next to app.py.")
 
+# ── Preclinical Pathology Lab — virtual microscope ───────────────────────────
+try:
+    from medsim_pathology import page_pathology_lab
+    PATHOLOGY_OK = True
+except Exception as e:
+    PATHOLOGY_OK = False
+    print(f"Pathology Lab not loaded: {e}")
+    def page_pathology_lab():
+        st.error("⚠️ medsim_pathology.py not found next to app.py.")
+
 # ── Clinical helpers (real PubMed retrieval, specialist X-ray AI, feedback) ──
 try:
     from clinical_helpers import (
@@ -4914,6 +4924,7 @@ with st.sidebar:
               ("🩺 Procedure Simulator","procedures"),
               ("🚑 MedSim Room","medsim_room"),
               ("🏥 Multi-Patient Caseload","medsim_multipatient"),
+              ("🔬 Pathology Lab (Preclinical)","pathology_lab"),
               ("🧠 Clinical Reasoning Map","reasoning"),
               ("🏆 Competency Tracker","competency"),
               ("🎯 OSCE Exam Simulator","osce"),
@@ -4929,6 +4940,19 @@ with st.sidebar:
     st.markdown('<div style="color:#64748b;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 4px;">🎓 ASHM Fellowship</div>', unsafe_allow_html=True)
     if st.button("🩺 Fellowship in AI-Simulated Hospital Medicine", use_container_width=True, key="nav_ashm_fellowship"):
         nav("ashm_fellowship")
+
+    # ── Navigation — Simulation Hospital (separate app, hand-skills training) ──
+    st.markdown("---")
+    st.markdown('<div style="color:#64748b;font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 4px;">🧪 Hands-On Skills Lab</div>', unsafe_allow_html=True)
+    try:
+        _sim_hospital_url = st.secrets.get("SIMULATION_HOSPITAL_URL", "")
+    except Exception:
+        _sim_hospital_url = ""
+    if _sim_hospital_url:
+        st.link_button("🧪 Go to Simulation Hospital", _sim_hospital_url, use_container_width=True)
+    else:
+        st.caption("🧪 Simulation Hospital link not configured — set `SIMULATION_HOSPITAL_URL` "
+                   "in this app's secrets to show a button here (e.g. its Streamlit Cloud URL).")
 
     # ── Navigation — Faculty (only shown to faculty) ───────────────
     if _is_faculty:
@@ -14691,6 +14715,9 @@ elif p=="medsim_multipatient":
 elif p=="ashm_fellowship":
     if ASHM_OK: page_ashm_fellowship()
     else: st.error("⚠️ ashm_fellowship.py not found next to app.py.")
+elif p=="pathology_lab":
+    if PATHOLOGY_OK: page_pathology_lab()
+    else: st.error("⚠️ medsim_pathology.py not found next to app.py.")
 # ── Diagnostic Delay → Complication Risk Simulator ──────────────────────────
 elif p=="deterioration":
     if DETERIORATION_OK: page_deterioration_simulator()

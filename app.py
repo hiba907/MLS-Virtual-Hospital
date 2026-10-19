@@ -205,6 +205,14 @@ except Exception as e:
     def page_ashm_fellowship():
         st.error("⚠️ ashm_fellowship.py (and medsim_case_intake.py) not found next to app.py.")
 
+# ── Therapy Timeline — treatment sequences from open-access case reports ─────
+try:
+    from therapy_timeline import render_therapy_timeline
+    TT_OK = True
+except Exception as e:
+    TT_OK = False
+    print(f"Therapy Timeline not loaded: {e}")
+
 # ── Preclinical Pathology Lab — virtual microscope ───────────────────────────
 try:
     from medsim_pathology import page_pathology_lab
@@ -4925,6 +4933,7 @@ with st.sidebar:
               ("🚑 MedSim Room","medsim_room"),
               ("🏥 Multi-Patient Caseload","medsim_multipatient"),
               ("🔬 Pathology Lab (Preclinical)","pathology_lab"),
+              ("⏱️ Therapy Timeline","therapy_timeline"),
               ("🧠 Clinical Reasoning Map","reasoning"),
               ("🏆 Competency Tracker","competency"),
               ("🎯 OSCE Exam Simulator","osce"),
@@ -14715,6 +14724,9 @@ elif p=="medsim_multipatient":
 elif p=="ashm_fellowship":
     if ASHM_OK: page_ashm_fellowship()
     else: st.error("⚠️ ashm_fellowship.py not found next to app.py.")
+elif p=="therapy_timeline":
+    if TT_OK: render_therapy_timeline(is_admin=((st.session_state.get("auth_user") or {}).get("role")=="admin"))
+    else: st.error("⚠️ therapy_timeline.py not found next to app.py.")
 elif p=="pathology_lab":
     if PATHOLOGY_OK: page_pathology_lab()
     else: st.error("⚠️ medsim_pathology.py not found next to app.py.")

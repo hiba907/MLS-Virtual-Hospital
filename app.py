@@ -212,6 +212,12 @@ try:
 except Exception as e:
     TT_OK = False
     print(f"Therapy Timeline not loaded: {e}")
+try:
+    from research_hub import render_research_hub
+    RH_OK = True
+except Exception as e:
+    RH_OK = False
+    print(f"Research Hub not loaded: {e}")
 
 # ── Preclinical Pathology Lab — virtual microscope ───────────────────────────
 try:
@@ -4934,6 +4940,7 @@ with st.sidebar:
               ("🏥 Multi-Patient Caseload","medsim_multipatient"),
               ("🔬 Pathology Lab (Preclinical)","pathology_lab"),
               ("⏱️ Therapy Timeline","therapy_timeline"),
+              ("🔬 Research Hub","research_hub"),
               ("🧠 Clinical Reasoning Map","reasoning"),
               ("🏆 Competency Tracker","competency"),
               ("🎯 OSCE Exam Simulator","osce"),
@@ -14727,6 +14734,9 @@ elif p=="ashm_fellowship":
 elif p=="therapy_timeline":
     if TT_OK: render_therapy_timeline(is_admin=((st.session_state.get("auth_user") or {}).get("role")=="admin"))
     else: st.error("⚠️ therapy_timeline.py not found next to app.py.")
+elif p=="research_hub":
+    if RH_OK: render_research_hub()
+    else: st.error("⚠️ research_hub.py not found next to app.py.")
 elif p=="pathology_lab":
     if PATHOLOGY_OK: page_pathology_lab()
     else: st.error("⚠️ medsim_pathology.py not found next to app.py.")

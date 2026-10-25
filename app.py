@@ -211,6 +211,11 @@ try:
     TT_OK = True
 except Exception as e:
     TT_OK = False
+try:
+    from smart_icu import render_smart_icu
+    SICU_OK = True
+except Exception:
+    SICU_OK = False
     print(f"Therapy Timeline not loaded: {e}")
 
 # ── Preclinical Pathology Lab — virtual microscope ───────────────────────────
@@ -4934,6 +4939,7 @@ with st.sidebar:
               ("🏥 Multi-Patient Caseload","medsim_multipatient"),
               ("🔬 Pathology Lab (Preclinical)","pathology_lab"),
               ("⏱️ Therapy Timeline","therapy_timeline"),
+              ("🏥 Smart ICU Management","smart_icu"),
               ("🧠 Clinical Reasoning Map","reasoning"),
               ("🏆 Competency Tracker","competency"),
               ("🎯 OSCE Exam Simulator","osce"),
@@ -14727,6 +14733,9 @@ elif p=="ashm_fellowship":
 elif p=="therapy_timeline":
     if TT_OK: render_therapy_timeline(is_admin=((st.session_state.get("auth_user") or {}).get("role")=="admin"))
     else: st.error("⚠️ therapy_timeline.py not found next to app.py.")
+elif p=="smart_icu":
+    if SICU_OK: render_smart_icu()
+    else: st.error("⚠️ smart_icu.py not found next to app.py.")
 elif p=="pathology_lab":
     if PATHOLOGY_OK: page_pathology_lab()
     else: st.error("⚠️ medsim_pathology.py not found next to app.py.")

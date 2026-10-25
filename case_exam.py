@@ -179,12 +179,31 @@ def _grade(question: str, keywords: list,
 # UI COMPONENTS
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _fallback_img_tag() -> str:
+    """Avatar photo (static/dr_hiba.jpg) as data URI if present, else a badge."""
+    import base64, os
+    for ext, mime in (("jpg", "jpeg"), ("jpeg", "jpeg"), ("png", "png")):
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", f"dr_hiba.{ext}")
+        if os.path.exists(p):
+            b = base64.b64encode(open(p, "rb").read()).decode()
+            return (f'<img src="data:image/{mime};base64,{b}" style="width:300px;height:265px;'
+                    f'object-fit:cover;border-radius:16px;">')
+    return ('<div style="width:300px;height:265px;border-radius:16px;display:flex;flex-direction:column;'
+            'align-items:center;justify-content:center;color:#fff;font-family:sans-serif;'
+            'background:linear-gradient(135deg,#0a2540,#0e7490);">'
+            '<div style="font-size:72px;">&#128105;&#8205;&#9877;&#65039;</div>'
+            '<div style="font-weight:700;margin-top:8px;">Dr. Hiba Hamdar</div>'
+            '<div style="font-size:12px;opacity:.8;">Medical Examiner</div></div>')
+
+
 def _show_video(clip_name: str):
-    """Render Dr. Hiba's video clip in the browser."""
+    """Render Dr. Hiba's video clip; if it cannot load, show her photo/badge instead."""
+    import json as _j
     url = CLIPS.get(clip_name, CLIPS["neutral"])
+    fb = _j.dumps(_fallback_img_tag())
     components.html(f"""
-    <div style="display:flex;justify-content:center;">
-      <video src="{url}" width="300" height="265"
+    <div id="box" style="display:flex;justify-content:center;">
+      <video id="v" src="{url}" width="300" height="265"
         autoplay loop muted playsinline
         style="border-radius:16px;
                box-shadow:0 8px 32px rgba(10,37,64,.35);
@@ -192,8 +211,13 @@ def _show_video(clip_name: str):
       </video>
     </div>
     <script>
-      var v = document.querySelector('video');
-      if(v) v.play().catch(function(){{ v.controls = true; }});
+      var v = document.getElementById('v');
+      function showFallback(){{ document.getElementById('box').innerHTML = {fb}; }}
+      if(v) {{
+        v.addEventListener('error', showFallback);
+        v.play().catch(function(){{ v.controls = true; }});
+        setTimeout(function(){{ if(v && v.readyState === 0) showFallback(); }}, 6000);
+      }}
     </script>
     """, height=280)
 
@@ -221,7 +245,20 @@ def _speak(text: str):
         window.speechSynthesis.onvoiceschanged = go;
       else go();
     }})();
-    </script>""", height=0)
+    window.__hibaSay = function(){{
+      window.speechSynthesis.cancel();
+      var u2 = new SpeechSynthesisUtterance({safe});
+      u2.rate = 0.88; u2.pitch = 1.05; u2.volume = 1.0;
+      var vs = window.speechSynthesis.getVoices();
+      var v2 = vs.find(function(x){{return x.lang.startsWith('en') &&
+        (x.name.includes('Female')||x.name.includes('Samantha')||x.name.includes('Karen')||x.name.includes('Moira'));}})
+        || vs.find(function(x){{return x.lang.startsWith('en');}}) || vs[0];
+      if(v2) u2.voice = v2;
+      window.speechSynthesis.speak(u2);
+    }};
+    </script>
+    <button onclick="window.__hibaSay()" style="background:#16a34a;color:#fff;border:0;border-radius:20px;
+      padding:8px 16px;font-weight:700;font-family:sans-serif;font-size:14px;">&#128266; Hear Dr. Hiba</button>""", height=50)
 
 
 def _mic_input():

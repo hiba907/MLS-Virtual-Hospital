@@ -11,15 +11,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping MLS Virtual Hospital
+        env:
+          KEY: ${{ secrets.VH_SUPABASE_ANON_KEY }}
         run: |
-          curl -s -o /dev/null -w "MLS Virtual Hospital -> HTTP %{http_code}\n" \
+          if [ -z "$KEY" ]; then echo "VH_SUPABASE_ANON_KEY not set - skipping"; exit 0; fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://udleavsgrlrszcmkbexm.supabase.co/rest/v1/vh_users?select=id&limit=1" \
-            -H "apikey: ${{ secrets.VH_SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.VH_SUPABASE_ANON_KEY }}"
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          echo "MLS Virtual Hospital -> HTTP $code"
+          case "$code" in 2*) ;; *) echo "::error::Virtual Hospital ping failed (HTTP $code)"; exit 1;; esac
 
       - name: Ping MLS Academy
+        env:
+          KEY: ${{ secrets.ACADEMY_SUPABASE_ANON_KEY }}
         run: |
-          curl -s -o /dev/null -w "MLS Academy -> HTTP %{http_code}\n" \
+          if [ -z "$KEY" ]; then echo "ACADEMY_SUPABASE_ANON_KEY not set in this repo - skipping"; exit 0; fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://czveautjgyakinweqfaa.supabase.co/rest/v1/platform_users?select=id&limit=1" \
-            -H "apikey: ${{ secrets.ACADEMY_SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.ACADEMY_SUPABASE_ANON_KEY }}"
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          echo "MLS Academy -> HTTP $code"
+          case "$code" in 2*) ;; *) echo "::error::Academy ping failed (HTTP $code) - project may be paused or deleted"; exit 1;; esac

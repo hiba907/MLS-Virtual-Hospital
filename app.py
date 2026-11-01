@@ -213,6 +213,12 @@ except Exception as e:
     TT_OK = False
     print(f"Therapy Timeline not loaded: {e}")
 try:
+    from case_discussions import render_case_discussions
+    CD_OK = True
+except Exception as e:
+    CD_OK = False
+    print(f"Case Discussions not loaded: {e}")
+try:
     from research_hub import render_research_hub
     RH_OK = True
 except Exception as e:
@@ -4941,6 +4947,7 @@ with st.sidebar:
               ("🔬 Pathology Lab (Preclinical)","pathology_lab"),
               ("⏱️ Therapy Timeline","therapy_timeline"),
               ("🔬 Research Hub","research_hub"),
+              ("💬 Case Discussions","case_discussions"),
               ("🧠 Clinical Reasoning Map","reasoning"),
               ("🏆 Competency Tracker","competency"),
               ("🎯 OSCE Exam Simulator","osce"),
@@ -14734,6 +14741,9 @@ elif p=="ashm_fellowship":
 elif p=="therapy_timeline":
     if TT_OK: render_therapy_timeline(is_admin=((st.session_state.get("auth_user") or {}).get("role")=="admin"))
     else: st.error("⚠️ therapy_timeline.py not found next to app.py.")
+elif p=="case_discussions":
+    if CD_OK: render_case_discussions()
+    else: st.error("⚠️ case_discussions.py not found next to app.py.")
 elif p=="research_hub":
     if RH_OK: render_research_hub()
     else: st.error("⚠️ research_hub.py not found next to app.py.")

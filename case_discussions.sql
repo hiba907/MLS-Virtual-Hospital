@@ -24,7 +24,7 @@ create table if not exists vh_disc_prefs (
   user_id text unique, email text, email_mode text default 'instant', last_seen text,
   created_at timestamp default now()
 );
-alter table vh_disc_threads disable row level security;
-alter table vh_disc_posts   disable row level security;
-alter table vh_disc_follows disable row level security;
-alter table vh_disc_prefs   disable row level security;
+alter table vh_disc_threads enable row level security;
+alter table vh_disc_posts   enable row level security;
+alter table vh_disc_follows enable row level security;
+alter table vh_disc_prefs   enable row level security;

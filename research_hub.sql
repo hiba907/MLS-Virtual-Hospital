@@ -20,8 +20,8 @@ create table if not exists vh_research_updates (
   id bigint generated always as identity primary key,
   project_id bigint, author text, text text, created_at timestamp default now()
 );
--- Same behaviour as your other app tables (see supabase_fix_rls.sql)
-alter table vh_research_projects disable row level security;
-alter table vh_research_members  disable row level security;
-alter table vh_research_refs     disable row level security;
-alter table vh_research_updates  disable row level security;
+-- RLS ON: the app uses the private service key, which bypasses it; the public anon key gets no access
+alter table vh_research_projects enable row level security;
+alter table vh_research_members  enable row level security;
+alter table vh_research_refs     enable row level security;
+alter table vh_research_updates  enable row level security;

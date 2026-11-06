@@ -25,3 +25,19 @@ alter table vh_research_projects enable row level security;
 alter table vh_research_members  enable row level security;
 alter table vh_research_refs     enable row level security;
 alter table vh_research_updates  enable row level security;
+
+-- Added later: stage checklist, project discussion, email columns
+alter table vh_research_projects add column if not exists owner_email text;
+alter table vh_research_members  add column if not exists email text;
+create table if not exists vh_research_steps (
+  id bigint generated always as identity primary key,
+  project_id bigint, stage text, step text, done boolean default false, done_by text,
+  created_at timestamp default now()
+);
+create table if not exists vh_research_posts (
+  id bigint generated always as identity primary key,
+  project_id bigint, parent_id bigint, author_id text, author_name text, body text,
+  hidden boolean default false, created_at timestamp default now()
+);
+alter table vh_research_steps enable row level security;
+alter table vh_research_posts enable row level security;

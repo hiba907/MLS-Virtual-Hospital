@@ -53,7 +53,34 @@ RULES = [
 ]
 
 TABLES = {"projects": "vh_research_projects", "members": "vh_research_members",
-          "refs": "vh_research_refs", "updates": "vh_research_updates"}
+          "refs": "vh_research_refs", "updates": "vh_research_updates",
+          "steps": "vh_research_steps", "posts": "vh_research_posts"}
+
+# Checklist the team ticks before the next stage unlocks (generic research workflow).
+STAGE_STEPS = {
+    "Idea": ["Research question written clearly (PICO for clinical questions)",
+             "Checked that no similar project already exists on the board",
+             "Mentor identified or requested"],
+    "Literature review": ["Search strategy written down (databases, keywords, dates)",
+                          "Titles and abstracts screened",
+                          "Key references added by PubMed ID",
+                          "Gap in knowledge summarised"],
+    "Protocol": ["Objectives and methods written",
+                 "Outcomes or variables defined",
+                 "Analysis plan written before collecting data",
+                 "Authorship roles agreed in writing"],
+    "Ethics review": ["Decided whether ethics approval is needed",
+                      "Ethics status recorded in the Ethics tab",
+                      "Faculty has seen the protocol"],
+    "Data collection": ["Data collection form prepared (no patient identifiers)",
+                        "Data collected and de-identified",
+                        "Data quality checked"],
+    "Analysis": ["Data cleaned", "Planned analysis run", "Results discussed with mentor"],
+    "Writing": ["First draft written", "Team and mentor revised the draft",
+                "All references checked against PubMed", "Final author list and order confirmed",
+                "AI assistance (if any) disclosed"],
+    "Submitted": ["Journal or conference chosen", "Submitted", "Submission reference recorded"],
+}
 
 
 # ───────────────────────── data layer (Supabase or demo) ─────────────────────────
@@ -145,6 +172,22 @@ def _user():
             "signed_in": bool(a)}
 
 
+def _app_url():
+    return _secret("APP_URL") or "https://mls-virtual-hospital.streamlit.app"
+
+
+def _mail(to, subject, headline, body_html):
+    """Send a short notification via the app's existing Gmail sender. Never include case details."""
+    if not to:
+        return False
+    try:
+        from admin_user_panel import _send_one_email, _build_html_email
+        html = _build_html_email(headline, body_html, "Open MLS Virtual Hospital", _app_url())
+        return bool(_send_one_email(to, subject, html, f"{headline} {_app_url()}"))
+    except Exception:
+        return False
+
+
 def _is_mod(u):
     return u["role"] in ("admin", "faculty")
 
@@ -230,10 +273,15 @@ def _propose(u):
                     "title": title.strip(), "question": question.strip(), "field": field, "study_type": stype,
                     "background": background.strip(), "seeking": ", ".join(seeking), "stage": STAGES[0],
                     "status": "pending", "owner_id": u["id"], "owner_name": u["name"],
-                    "ethics_status": ETHICS[0], "ethics_note": "", "mentor_name": "", "moderator_note": ""})
+                    "ethics_status": ETHICS[0], "ethics_note": "", "mentor_name": "", "moderator_note": "",
+                    "owner_email": u["email"]})
                 if row:
                     db_insert("members", {"project_id": row["id"], "user_id": u["id"], "name": u["name"],
-                                          "role": "Lead", "status": "accepted", "message": ""})
+                                          "role": "Lead", "status": "accepted", "message": "", "email": u["email"]})
+                    _mail(_secret("NOTIFY_EMAIL"), f"New research idea to review: {title.strip()}",
+                          "A new research idea is waiting for your review",
+                          f"<b>{u['name']}</b> proposed <b>{title.strip()}</b> ({field}, {stype}).<br><br>"
+                          f"Open the Research Hub, then <b>Faculty review</b>, to approve it, request changes or reject it.")
                     st.success("Submitted. Faculty will review it. You can follow it under 'My projects'.")
 
 
@@ -284,7 +332,7 @@ def _project(u, pid):
     _stage_bar(p.get("stage", STAGES[0]))
     if p.get("status") == "pending":
         st.info("Waiting for faculty approval.")
-    t = st.tabs(["Overview", "Team", "References", "Updates", "Ethics and authorship"])
+    t = st.tabs(["Overview", "Team", "Discussion", "References", "Updates", "Ethics and authorship"])
 
     with t[0]:
         st.markdown("**Research question**")
@@ -293,20 +341,7 @@ def _project(u, pid):
         st.write(p.get("background"))
         if p.get("seeking"):
             st.caption("Looking for: " + p["seeking"])
-        if can_edit:
-            cur = STAGES.index(p.get("stage", STAGES[0]))
-            new = st.selectbox("Move project stage", STAGES, index=cur, key=f"rh_stg_{pid}")
-            if st.button("Save stage", key=f"rh_sv_{pid}") and new != p.get("stage"):
-                if new in STAGES[4:] and p.get("ethics_status") not in DATA_GATE_OK:
-                    st.error("Blocked: record an ethics status of 'Not required (with reason)' or "
-                             "'Approved (with reference)' in the Ethics tab before data collection or later stages.")
-                elif new in STAGES[4:] and not (p.get("ethics_note") or "").strip():
-                    st.error("Blocked: add the reason or approval reference in the Ethics tab.")
-                else:
-                    db_update("projects", pid, {"stage": new})
-                    db_insert("updates", {"project_id": pid, "author": u["name"],
-                                          "text": f"Stage changed: {p.get('stage')} → {new}"})
-                    st.rerun()
+        _stage_panel(u, p, pid, can_edit)
 
     with t[1]:
         for m in members:
@@ -330,12 +365,20 @@ def _project(u, pid):
                 msg = st.text_area("Short note (skills, availability)", height=70)
                 if st.form_submit_button("Request to join"):
                     db_insert("members", {"project_id": pid, "user_id": u["id"], "name": u["name"],
-                                          "role": role, "status": "pending", "message": msg})
+                                          "role": role, "status": "pending", "message": msg, "email": u["email"]})
+                    owner = next((m for m in members if m.get("user_id") == p.get("owner_id")), {})
+                    _mail(p.get("owner_email") or owner.get("email"), f"Join request: {p['title']}",
+                          "Someone asked to join your research project",
+                          f"<b>{u['name']}</b> asked to join <b>{p['title']}</b> as {role}. "
+                          f"Open the project, then the <b>Team</b> tab, to accept or decline.")
                     st.success("Request sent to the project lead.")
         elif mine and mine.get("status") == "pending":
             st.caption("Your join request is pending.")
 
     with t[2]:
+        _discussion(u, p, pid, members, can_edit)
+
+    with t[3]:
         st.caption("References are added by PubMed ID so anyone can check them.")
         for r in db_select("refs", eq={"project_id": pid}):
             link = f"https://pubmed.ncbi.nlm.nih.gov/{r['pmid']}/"
@@ -354,7 +397,7 @@ def _project(u, pid):
                                        "citation": info["citation"], "doi": info["doi"], "added_by": u["name"]})
                     st.rerun()
 
-    with t[3]:
+    with t[4]:
         if can_edit:
             txt = st.text_area("Add a progress note (no patient identifiers)", key=f"rh_un_{pid}", height=80)
             if st.button("Post update", key=f"rh_up_{pid}") and txt.strip():
@@ -363,7 +406,7 @@ def _project(u, pid):
         for x in db_select("updates", eq={"project_id": pid}, order="created_at.desc"):
             st.markdown(f"**{x.get('author')}** · {str(x.get('created_at', ''))[:16]}  \n{x.get('text')}")
 
-    with t[4]:
+    with t[5]:
         st.write(f"Ethics status: **{p.get('ethics_status')}**")
         if p.get("ethics_note"):
             st.write("Reason / reference: " + p["ethics_note"])
@@ -379,6 +422,114 @@ def _project(u, pid):
         st.markdown("**Authorship (ICMJE)**")
         st.write(RULES[2][1])
         st.caption("Faculty should confirm an ethics status; the hub records it but is not an ethics committee.")
+
+
+def _stage_panel(u, p, pid, can_edit):
+    """Stage tracker with a tick-list per stage; the next stage unlocks when every step is ticked."""
+    cur = p.get("stage", STAGES[0])
+    ci = STAGES.index(cur) if cur in STAGES else 0
+    rows = db_select("steps", eq={"project_id": pid})
+    done = {(r["stage"], r["step"]): r for r in rows if r.get("done")}
+    st.markdown("**Stages**")
+    for i, stg in enumerate(STAGES):
+        steps = STAGE_STEPS.get(stg, [])
+        n = sum(1 for x in steps if (stg, x) in done)
+        mark = "✅" if i < ci else ("▶️" if i == ci else "🔒")
+        st.write(f"{mark} {i + 1}. {stg}" + (f"  ({n}/{len(steps)} steps)" if i <= ci else ""))
+    steps = STAGE_STEPS.get(cur, [])
+    st.markdown(f"**Current stage: {cur}**")
+    all_done = True
+    for x in steps:
+        was = (cur, x) in done
+        if can_edit:
+            now = st.checkbox(x, value=was, key=f"rh_st_{pid}_{ci}_{abs(hash(x))}")
+            if now != was:
+                prev = [r for r in rows if r["stage"] == cur and r["step"] == x]
+                if prev:
+                    db_update("steps", prev[0]["id"], {"done": now, "done_by": u["name"]})
+                else:
+                    db_insert("steps", {"project_id": pid, "stage": cur, "step": x, "done": now, "done_by": u["name"]})
+                db_insert("updates", {"project_id": pid, "author": u["name"],
+                                      "text": f"{'Completed' if now else 'Reopened'} step in {cur}: {x}"})
+                st.rerun()
+        else:
+            st.write(("☑ " if was else "☐ ") + x)
+        all_done = all_done and was
+    if can_edit and ci < len(STAGES) - 1:
+        nxt = STAGES[ci + 1]
+        if st.button(f"Finish '{cur}' and start '{nxt}'", key=f"rh_adv_{pid}", disabled=not all_done,
+                     type="primary"):
+            if nxt in STAGES[4:] and p.get("ethics_status") not in DATA_GATE_OK:
+                st.error("Blocked: record an ethics status of 'Not required (with reason)' or "
+                         "'Approved (with reference)' in the Ethics tab first.")
+            elif nxt in STAGES[4:] and not (p.get("ethics_note") or "").strip():
+                st.error("Blocked: add the reason or approval reference in the Ethics tab.")
+            else:
+                db_update("projects", pid, {"stage": nxt})
+                db_insert("updates", {"project_id": pid, "author": u["name"],
+                                      "text": f"Stage completed: {cur} → now {nxt}"})
+                st.rerun()
+        if not all_done:
+            st.caption("Tick every step above to unlock the next stage.")
+    elif ci == len(STAGES) - 1 and all_done and steps:
+        st.success("All stages complete.")
+    if _is_mod(u):
+        with st.expander("Faculty: set stage manually"):
+            new = st.selectbox("Stage", STAGES, index=ci, key=f"rh_ms_{pid}")
+            if st.button("Set stage", key=f"rh_mss_{pid}") and new != cur:
+                if new in STAGES[4:] and p.get("ethics_status") not in DATA_GATE_OK:
+                    st.error("Ethics status must be recorded first.")
+                else:
+                    db_update("projects", pid, {"stage": new})
+                    db_insert("updates", {"project_id": pid, "author": u["name"],
+                                          "text": f"Faculty set stage: {cur} → {new}"})
+                    st.rerun()
+
+
+def _discussion(u, p, pid, members, can_edit):
+    """Questions and answers inside a project. Team members and faculty post; signed-in users can read."""
+    st.caption("Ask the team a question or help answer one. No patient identifiers, ever.")
+    posts = db_select("posts", eq={"project_id": pid}, order="created_at.asc")
+    qs = [x for x in posts if not x.get("parent_id") and not x.get("hidden")]
+    for q in reversed(qs):
+        with st.container(border=True):
+            st.markdown(f"**{q.get('author_name')}** · {str(q.get('created_at', ''))[:16]}  \n{q.get('body')}")
+            for a in [x for x in posts if str(x.get("parent_id")) == str(q["id"]) and not x.get("hidden")]:
+                st.markdown(f"↳ **{a.get('author_name')}** · {str(a.get('created_at', ''))[:16]}  \n{a.get('body')}")
+            if can_edit:
+                ans = st.text_input("Answer", key=f"rh_an_{q['id']}", label_visibility="collapsed",
+                                    placeholder="Write an answer")
+                c = st.columns([1, 1, 3])
+                if c[0].button("Reply", key=f"rh_ar_{q['id']}") and ans.strip():
+                    db_insert("posts", {"project_id": pid, "parent_id": q["id"], "author_id": u["id"],
+                                        "author_name": u["name"], "body": ans.strip(), "hidden": False})
+                    asker = next((m for m in members if m.get("user_id") == q.get("author_id")), {})
+                    if q.get("author_id") != u["id"]:
+                        _mail(asker.get("email"), f"Answer in: {p['title']}", "Your question got an answer",
+                              f"<b>{u['name']}</b> answered your question in <b>{p['title']}</b>. "
+                              f"Open the project, then the <b>Discussion</b> tab.")
+                    st.rerun()
+                if _is_mod(u) and c[1].button("Remove", key=f"rh_ad_{q['id']}"):
+                    db_update("posts", q["id"], {"hidden": True})
+                    st.rerun()
+    if not qs:
+        st.info("No questions yet.")
+    if can_edit:
+        with st.form(f"rh_q_{pid}_{len(qs)}"):
+            body = st.text_area("Ask the team a question", height=90)
+            if st.form_submit_button("Post question", type="primary") and body.strip():
+                db_insert("posts", {"project_id": pid, "parent_id": None, "author_id": u["id"],
+                                    "author_name": u["name"], "body": body.strip(), "hidden": False})
+                sent = 0
+                for m in members:
+                    if m.get("status") == "accepted" and m.get("user_id") != u["id"] and sent < 20:
+                        if _mail(m.get("email"), f"New question in: {p['title']}", "A teammate asked a question",
+                                 f"<b>{u['name']}</b> posted a question in <b>{p['title']}</b>. "
+                                 f"Open the project, then the <b>Discussion</b> tab, to answer."):
+                            sent += 1
+                st.rerun()
+    else:
+        st.caption("Only team members and faculty can post. Request to join in the Team tab.")
 
 
 def _moderate(u):
@@ -405,12 +556,19 @@ def _moderate(u):
             c = st.columns(3)
             if c[0].button("Approve", key=f"rh_ap_{p['id']}", type="primary"):
                 db_update("projects", p["id"], {"status": "approved", "moderator_note": note, "mentor_name": mentor or ""})
+                _mail(p.get("owner_email"), f"Approved: {p['title']}", "Your research idea was approved",
+                      f"<b>{p['title']}</b> is now on the project board. Open it to invite team members."
+                      + (f"<br><br>Note from faculty: {note}" if note else ""))
                 st.rerun()
             if c[1].button("Request changes", key=f"rh_ch_{p['id']}"):
                 db_update("projects", p["id"], {"status": "changes", "moderator_note": note or "Please revise."})
+                _mail(p.get("owner_email"), f"Changes requested: {p['title']}", "Faculty asked for changes to your idea",
+                      f"Open <b>My projects</b> in the Research Hub to read the note. {note or ''}")
                 st.rerun()
             if c[2].button("Reject", key=f"rh_rj_{p['id']}"):
                 db_update("projects", p["id"], {"status": "rejected", "moderator_note": note})
+                _mail(p.get("owner_email"), f"Decision on: {p['title']}", "Faculty reviewed your idea",
+                      f"Open <b>My projects</b> in the Research Hub to read the note. {note or ''}")
                 st.rerun()
 
 

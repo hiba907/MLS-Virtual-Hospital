@@ -224,6 +224,12 @@ try:
 except Exception as e:
     RH_OK = False
     print(f"Research Hub not loaded: {e}")
+try:
+    from patient_chart import render_patient_chart
+    PC_OK = True
+except Exception as e:
+    PC_OK = False
+    print(f"Patient Chart not loaded: {e}")
 
 # ── Preclinical Pathology Lab — virtual microscope ───────────────────────────
 try:
@@ -4948,6 +4954,7 @@ with st.sidebar:
               ("⏱️ Therapy Timeline","therapy_timeline"),
               ("🔬 Research Hub","research_hub"),
               ("💬 Case Discussions","case_discussions"),
+              ("🩺 Patient Chart — Daily Rounds","patient_chart"),
               ("🧠 Clinical Reasoning Map","reasoning"),
               ("🏆 Competency Tracker","competency"),
               ("🎯 OSCE Exam Simulator","osce"),
@@ -14747,6 +14754,14 @@ elif p=="case_discussions":
 elif p=="research_hub":
     if RH_OK: render_research_hub()
     else: st.error("⚠️ research_hub.py not found next to app.py.")
+elif p=="patient_chart":
+    if PC_OK:
+        def _pc_xp():
+            if TIER1_AVAILABLE:
+                try: award_xp("progress_note_written")
+                except Exception: pass
+        render_patient_chart(case_loader=load_cases, on_visit_saved=_pc_xp)
+    else: st.error("⚠️ patient_chart.py not found next to app.py.")
 elif p=="pathology_lab":
     if PATHOLOGY_OK: page_pathology_lab()
     else: st.error("⚠️ medsim_pathology.py not found next to app.py.")

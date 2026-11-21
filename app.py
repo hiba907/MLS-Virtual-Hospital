@@ -230,6 +230,12 @@ try:
 except Exception as e:
     PC_OK = False
     print(f"Patient Chart not loaded: {e}")
+try:
+    from feedback_survey import render_feedback_survey
+    FB_OK = True
+except Exception as e:
+    FB_OK = False
+    print(f"Feedback survey not loaded: {e}")
 
 # ── Preclinical Pathology Lab — virtual microscope ───────────────────────────
 try:
@@ -4961,7 +4967,8 @@ with st.sidebar:
               ("📋 Progress Notes","notes"),
               ("🃏 Flashcard Builder","flashcards"),
               ("⏱️ Diagnostic Delay Simulator","deterioration"),
-              ("⭐ My Progress (XP)","progress_dashboard")]
+              ("⭐ My Progress (XP)","progress_dashboard"),
+              ("📝 Feedback (anonymous)","feedback")]
     for label,pk in advanced:
         if st.button(label,use_container_width=True,key=f"nav_{pk}"): nav(pk)
 
@@ -14762,6 +14769,9 @@ elif p=="patient_chart":
                 except Exception: pass
         render_patient_chart(case_loader=load_cases, on_visit_saved=_pc_xp)
     else: st.error("⚠️ patient_chart.py not found next to app.py.")
+elif p=="feedback":
+    if FB_OK: render_feedback_survey()
+    else: st.error("⚠️ feedback_survey.py not found next to app.py.")
 elif p=="pathology_lab":
     if PATHOLOGY_OK: page_pathology_lab()
     else: st.error("⚠️ medsim_pathology.py not found next to app.py.")
